@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { WebView } from "react-native-webview";
@@ -32,9 +32,10 @@ export const OffRampScreen: React.FC<OffRampScreenProps> = () => {
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod | null>(null);
   const [showWebView, setShowWebView] = useState(false);
   const [webViewLoading, setWebViewLoading] = useState(true);
+  const [availableProviders, setAvailableProviders] = useState<RampProvider[]>([]);
 
-  const availableProviders = useMemo(() => {
-    return getAvailableProviders(selectedRampType);
+  useEffect(() => {
+    getAvailableProviders(selectedRampType).then(setAvailableProviders);
   }, [selectedRampType]);
 
   const availablePaymentMethods = useMemo(() => {

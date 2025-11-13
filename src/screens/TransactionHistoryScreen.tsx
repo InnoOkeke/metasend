@@ -118,7 +118,7 @@ export const TransactionHistoryScreen: React.FC<Props> = ({ navigation }) => {
 
     return activities.filter(item => {
       if (activeTab === "sent") {
-        if (item.type === "transfer") return item.data.status === "sent";
+        if (item.type === "transfer") return (item.data as TransferRecord).status === "sent";
         if (item.type === "blockchain") return (item.data as BlockchainTransaction).type === "sent";
         if (item.type === "gift") return (item.data as CryptoGift).fromEmail === profile?.email;
         if (item.type === "payment-request") return (item.data as PaymentRequest).fromEmail === profile?.email;
@@ -133,7 +133,7 @@ export const TransactionHistoryScreen: React.FC<Props> = ({ navigation }) => {
       }
 
       if (activeTab === "pending") {
-        if (item.type === "transfer") return item.data.status === "pending";
+        if (item.type === "transfer") return (item.data as TransferRecord).status === "pending_recipient_signup";
         if (item.type === "gift") return (item.data as CryptoGift).status === "pending";
         if (item.type === "payment-request") return (item.data as PaymentRequest).status === "pending";
         if (item.type === "invoice") return ["sent", "overdue"].includes((item.data as Invoice).status);

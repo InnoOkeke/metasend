@@ -37,7 +37,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 export const RootNavigator: React.FC = () => {
   const { isConnected, loading, profile, disconnect } = useCoinbase();
   const { colors, scheme } = useTheme();
-  const [isReturningUser, setIsReturningUser] = useState(false);
+  const [isReturningUser, setIsReturningUser] = useState<boolean | null>(null);
   const [needsBiometric, setNeedsBiometric] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
 
@@ -46,31 +46,45 @@ export const RootNavigator: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (isConnected && !loading) {
+    if (isConnected && !loading && isReturningUser !== null) {
+      markAsReturningUser();
       checkBiometricStatus();
     }
-  }, [isConnected, loading]);
+  }, [isConnected, loading, isReturningUser]);
 
   const checkReturningUser = async () => {
     try {
+      // Clear biometric auth on app reload so returning users need to re-authenticate
+      await AsyncStorage.removeItem(BIOMETRIC_AUTH_KEY);
       const returning = await AsyncStorage.getItem(RETURNING_USER_KEY);
       setIsReturningUser(returning === "true");
     } catch (error) {
       console.error("Error checking returning user:", error);
+      setIsReturningUser(false);
     } finally {
       setCheckingAuth(false);
+    }
+  };
+
+  const markAsReturningUser = async () => {
+    try {
+      await AsyncStorage.setItem(RETURNING_USER_KEY, "true");
+      if (isReturningUser === false) {
+        setIsReturningUser(true);
+      }
+    } catch (error) {
+      console.error("Error marking returning user:", error);
     }
   };
 
   const checkBiometricStatus = async () => {
     try {
       const biometricAuth = await AsyncStorage.getItem(BIOMETRIC_AUTH_KEY);
+      // If user is returning and hasn't authenticated this session
       if (isReturningUser && !biometricAuth) {
         setNeedsBiometric(true);
       } else {
         setNeedsBiometric(false);
-        // Mark as returning user after first successful login
-        await AsyncStorage.setItem(RETURNING_USER_KEY, "true");
       }
     } catch (error) {
       console.error("Error checking biometric status:", error);
@@ -80,14 +94,11 @@ export const RootNavigator: React.FC = () => {
 
   const handleBiometricUnlock = async () => {
     setNeedsBiometric(false);
-    await AsyncStorage.setItem(RETURNING_USER_KEY, "true");
   };
 
   const handleSignOut = async () => {
     await AsyncStorage.removeItem(BIOMETRIC_AUTH_KEY);
-    await AsyncStorage.removeItem(RETURNING_USER_KEY);
     setNeedsBiometric(false);
-    setIsReturningUser(false);
     disconnect();
   };
 
@@ -126,7 +137,18 @@ export const RootNavigator: React.FC = () => {
     );
   }
 
-  // Show biometric unlock for returning users
+  // Show biometric unlock for returning users (even if not connected yet)
+  if (isReturningUser && !isConnected) {
+    return (
+      <BiometricUnlockScreen
+        onUnlock={handleBiometricUnlock}
+        onSignOut={handleSignOut}
+        userEmail={profile?.email}
+      />
+    );
+  }
+
+  // Show biometric unlock for connected returning users who need to authenticate
   if (isConnected && needsBiometric) {
     return (
       <BiometricUnlockScreen

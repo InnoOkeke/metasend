@@ -1,21 +1,19 @@
 {
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/**/*.ts",
+      "use": "@vercel/node"
+    }
+  ],
   "crons": [
     {
       "path": "/api/cron/process-expiry",
-      "schedule": "0 * * * *"
+      "schedule": "0 0 * * *"
     },
     {
       "path": "/api/cron/send-reminders",
-      "schedule": "0 */6 * * *"
+      "schedule": "0 12 * * *"
     }
-  ],
-  "env": {
-    "MONGODB_URI": "@mongodb_uri",
-    "RESEND_API_KEY": "@resend_api_key",
-    "ESCROW_MASTER_KEY": "@escrow_master_key",
-    "COINBASE_PAYMASTER_API_KEY": "@coinbase_paymaster_api_key",
-    "CRON_SECRET": "@cron_secret",
-    "APP_URL": "https://app.metasend.io",
-    "SUPPORT_EMAIL": "support@metasend.io"
-  }
+  ]
 }

@@ -54,7 +54,7 @@ export async function isAfricanUser(): Promise<boolean> {
   
   // Fallback to device locale if location not available
   if (!countryCode) {
-    countryCode = Localization.region?.toUpperCase() ?? "";
+    countryCode = Localization.getLocales()[0]?.regionCode?.toUpperCase() ?? "";
   }
   
   return AFRICAN_COUNTRIES.includes(countryCode);
@@ -79,7 +79,7 @@ export async function getAvailableProviders(type: RampType): Promise<RampProvide
  * Based on: https://docs.cdp.coinbase.com/onramp-&-offramp/developer-guidance/payment-methods
  */
 export function getCoinbasePaymentMethods(type: RampType, countryCode?: string): PaymentMethod[] {
-  const country = countryCode?.toUpperCase() ?? Localization.region?.toUpperCase() ?? "";
+  const country = countryCode?.toUpperCase() ?? Localization.getLocales()[0]?.regionCode?.toUpperCase() ?? "";
   
   const methods: PaymentMethod[] = [
     "CRYPTO_ACCOUNT", // Available globally
@@ -122,7 +122,7 @@ export async function fetchCoinbasePaymentMethods(
   countryCode?: string
 ): Promise<PaymentMethod[]> {
   try {
-    const country = countryCode?.toUpperCase() ?? Localization.region?.toUpperCase() ?? "US";
+    const country = countryCode?.toUpperCase() ?? Localization.getLocales()[0]?.regionCode?.toUpperCase() ?? "US";
     
     // Coinbase API endpoint for fetching payment methods
     const url = `https://api.coinbase.com/onramp/v1/payment-methods?country=${country}&type=${type}`;

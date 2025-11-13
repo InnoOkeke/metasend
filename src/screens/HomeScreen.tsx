@@ -42,6 +42,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   const [isExchangeModalVisible, setIsExchangeModalVisible] = useState(false);
   const [isMoreFeaturesModalVisible, setIsMoreFeaturesModalVisible] = useState(false);
   const [isLocationModalVisible, setIsLocationModalVisible] = useState(false);
+  const [isCurrencySelectorVisible, setIsCurrencySelectorVisible] = useState(false);
   const [selectedRampType, setSelectedRampType] = useState<RampType | null>(null);
   const [selectedProvider, setSelectedProvider] = useState<RampProvider | null>(null);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod | null>(null);
@@ -112,6 +113,32 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
       'GR': { currency: 'EUR', symbol: '€' },
     };
     return currencyByCountry[countryCode] ?? { currency: 'USD', symbol: '$' };
+  };
+
+  // Popular currencies for manual selection
+  const popularCurrencies = [
+    { currency: 'USD', symbol: '$', name: 'US Dollar' },
+    { currency: 'EUR', symbol: '€', name: 'Euro' },
+    { currency: 'GBP', symbol: '£', name: 'British Pound' },
+    { currency: 'NGN', symbol: '₦', name: 'Nigerian Naira' },
+    { currency: 'KES', symbol: 'KSh', name: 'Kenyan Shilling' },
+    { currency: 'ZAR', symbol: 'R', name: 'South African Rand' },
+    { currency: 'GHS', symbol: 'GH₵', name: 'Ghanaian Cedi' },
+    { currency: 'JPY', symbol: '¥', name: 'Japanese Yen' },
+    { currency: 'CNY', symbol: '¥', name: 'Chinese Yuan' },
+    { currency: 'INR', symbol: '₹', name: 'Indian Rupee' },
+    { currency: 'BRL', symbol: 'R$', name: 'Brazilian Real' },
+    { currency: 'CAD', symbol: 'CA$', name: 'Canadian Dollar' },
+    { currency: 'AUD', symbol: 'A$', name: 'Australian Dollar' },
+    { currency: 'NZD', symbol: 'NZ$', name: 'New Zealand Dollar' },
+    { currency: 'MXN', symbol: 'MX$', name: 'Mexican Peso' },
+    { currency: 'ARS', symbol: 'AR$', name: 'Argentine Peso' },
+  ];
+
+  const handleCurrencySelect = (selectedCurrency: { currency: string; symbol: string; name: string }) => {
+    setUserCurrency(selectedCurrency.currency);
+    setCurrencySymbol(selectedCurrency.symbol);
+    setIsCurrencySelectorVisible(false);
   };
 
   // Check location permission on mount
@@ -483,8 +510,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
       </View>
 
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Recent Transactions</Text>
-        <Text style={styles.sectionSubtitle}>Latest activity on your wallet</Text>
+        <View style={styles.sectionTitleRow}>
+          <View>
+            <Text style={styles.sectionTitle}>Recent Transactions</Text>
+            <Text style={styles.sectionSubtitle}>Latest activity on your wallet</Text>
+          </View>
+          <TouchableOpacity onPress={() => navigation.navigate('TransactionHistory')}>
+            <Text style={styles.seeAllText}>See All</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <FlatList
@@ -1032,6 +1066,50 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         </View>
       </Modal>
 
+      {/* Currency Selector Modal */}
+      <Modal
+        visible={isCurrencySelectorVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setIsCurrencySelectorVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.rampModalHeader}>
+              <Text style={styles.rampModalTitle}>Select Display Currency</Text>
+              <Pressable onPress={() => setIsCurrencySelectorVisible(false)} style={styles.closeButton}>
+                <Text style={styles.closeButtonText}>✕</Text>
+              </Pressable>
+            </View>
+            
+            <ScrollView style={styles.currencyList} showsVerticalScrollIndicator={false}>
+              {popularCurrencies.map((curr) => (
+                <TouchableOpacity
+                  key={curr.currency}
+                  style={[
+                    styles.currencyOption,
+                    userCurrency === curr.currency && styles.currencyOptionActive
+                  ]}
+                  onPress={() => handleCurrencySelect(curr)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.currencyInfo}>
+                    <Text style={styles.currencySymbol}>{curr.symbol}</Text>
+                    <View style={styles.currencyDetails}>
+                      <Text style={styles.currencyCode}>{curr.currency}</Text>
+                      <Text style={styles.currencyName}>{curr.name}</Text>
+                    </View>
+                  </View>
+                  {userCurrency === curr.currency && (
+                    <Text style={styles.currencyCheckmark}>✓</Text>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
       {/* Settings Screen */}
       {activeTab === "settings" && (
         <View style={styles.settingsContainer}>
@@ -1081,14 +1159,19 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                 </View>
               </View>
               
-              <View style={styles.settingRow}>
+              <TouchableOpacity 
+                style={styles.settingRow}
+                onPress={() => setIsCurrencySelectorVisible(true)}
+                activeOpacity={0.7}
+              >
                 <View style={styles.settingInfo}>
                   <Text style={styles.settingTitle}>Display Currency</Text>
                   <Text style={styles.settingDescription}>
-                    {userCurrency} ({currencySymbol}) - {locationPermission === 'granted' ? 'From location' : 'From device locale'}
+                    {userCurrency} ({currencySymbol})
                   </Text>
                 </View>
-              </View>
+                <Text style={styles.settingArrow}>→</Text>
+              </TouchableOpacity>
               
               {locationPermission !== 'granted' && (
                 <TouchableOpacity 
@@ -1294,6 +1377,11 @@ const createStyles = (colors: ColorPalette) =>
       marginBottom: spacing.md,
       paddingHorizontal: spacing.lg,
     },
+    sectionTitleRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
     sectionTitle: {
       ...typography.subtitle,
       color: colors.textPrimary,
@@ -1305,6 +1393,12 @@ const createStyles = (colors: ColorPalette) =>
       ...typography.body,
       color: colors.textSecondary,
       fontSize: 13,
+    },
+    seeAllText: {
+      ...typography.body,
+      color: colors.primary,
+      fontSize: 14,
+      fontWeight: '600',
     },
     list: {
       flex: 1,
@@ -1790,6 +1884,53 @@ const createStyles = (colors: ColorPalette) =>
       fontSize: 18,
       color: colors.textSecondary,
       opacity: 0.6,
+    },
+
+    // Currency Selector Modal Styles
+    currencyList: {
+      flex: 1,
+    },
+    currencyOption: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      padding: spacing.md,
+      backgroundColor: colors.cardBackground,
+      borderRadius: 12,
+      marginBottom: spacing.sm,
+      borderWidth: 2,
+      borderColor: "transparent",
+    },
+    currencyOptionActive: {
+      borderColor: "#3B82F6",
+      backgroundColor: colors.background,
+    },
+    currencyInfo: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.md,
+    },
+    currencySymbol: {
+      fontSize: 32,
+      width: 40,
+      textAlign: "center",
+    },
+    currencyDetails: {
+      gap: 2,
+    },
+    currencyCode: {
+      fontSize: 16,
+      fontWeight: "600",
+      color: colors.textPrimary,
+    },
+    currencyName: {
+      fontSize: 13,
+      color: colors.textSecondary,
+    },
+    currencyCheckmark: {
+      fontSize: 24,
+      color: "#3B82F6",
+      fontWeight: "bold",
     },
     themeSelector: {
       flexDirection: "row",

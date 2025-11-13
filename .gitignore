@@ -42,3 +42,7 @@ yarn-error.*
 /android
 
 .vercel
+
+# Test files with sensitive data
+test-email.js
+test-*.js

@@ -7,7 +7,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { CDPProvider } from "./src/providers/CDPProvider";
 import { CoinbaseProvider } from "./src/providers/CoinbaseProvider";
-import { PaymasterProvider } from "./src/providers/PaymasterProvider";
 import { ThemeProvider, useTheme } from "./src/providers/ThemeProvider";
 import { RootNavigator } from "./src/navigation/RootNavigator";
 
@@ -19,11 +18,9 @@ export default function App() {
       <ThemeProvider>
         <CDPProvider>
           <CoinbaseProvider>
-            <PaymasterProvider>
-              <SafeAreaProvider>
-                <ThemedAppShell />
-              </SafeAreaProvider>
-            </PaymasterProvider>
+            <SafeAreaProvider>
+              <ThemedAppShell />
+            </SafeAreaProvider>
           </CoinbaseProvider>
         </CDPProvider>
       </ThemeProvider>

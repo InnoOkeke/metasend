@@ -4,8 +4,8 @@ export const formatShortAddress = (address: string) => {
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
 };
 
-export const formatRelativeDate = (iso: string): string => {
-  const then = new Date(iso);
+export const formatRelativeDate = (iso: string | number): string => {
+  const then = typeof iso === "number" ? new Date(iso) : new Date(iso);
   const now = new Date();
   const diff = now.getTime() - then.getTime();
   const diffMinutes = Math.floor(diff / (1000 * 60));

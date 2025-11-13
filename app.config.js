@@ -15,6 +15,10 @@ export default ({ config }) => ({
     // Coinbase Paymaster
     coinbasePaymasterApiKey: process.env.COINBASE_PAYMASTER_API_KEY || "",
     
+    // Ramp Providers
+    moonpayApiKey: process.env.MOONPAY_API_KEY || "",
+    paycrestApiKey: process.env.PAYCREST_API_KEY || "",
+    
     // Email Service
     sendgridApiKey: process.env.SENDGRID_API_KEY || "",
     resendApiKey: process.env.RESEND_API_KEY || "",

@@ -27,6 +27,8 @@ type ExpoExtra = {
   awsSesRegion?: string;
   awsSesAccessKey?: string;
   awsSesSecretKey?: string;
+  metasendApiBaseUrl?: string;
+  metasendApiKey?: string;
 };
 
 class EmailNotificationService {
@@ -358,51 +360,51 @@ class EmailNotificationService {
    * Send email using configured provider
    */
   private async sendEmail(params: { to: string; subject: string; html: string }): Promise<boolean> {
-    // Use Resend if configured
-    if (this.RESEND_API_KEY) {
-      try {
-        const { Resend } = await import("resend");
-        const resend = new Resend(this.RESEND_API_KEY);
-        
-        await resend.emails.send({
-          from: this.SUPPORT_EMAIL,
+    try {
+      // Call backend API to send email (Resend must be server-side)
+      const apiBaseUrl = this.extra.metasendApiBaseUrl || 'https://metasend.vercel.app';
+      const apiKey = this.extra.metasendApiKey || '';
+      
+      const response = await fetch(`${apiBaseUrl}/api/send-email`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
           to: params.to,
           subject: params.subject,
           html: params.html,
-        });
+          from: this.SUPPORT_EMAIL,
+        }),
+      });
 
-        console.log("✅ Email sent via Resend:", {
-          to: params.to,
-          subject: params.subject,
-        });
-
-        return true;
-      } catch (error) {
-        console.error("Resend email error:", error);
-        throw new Error(`Failed to send email: ${error instanceof Error ? error.message : "Unknown error"}`);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`Email API error: ${response.status} - ${errorData.error || response.statusText}`);
       }
-    }
 
-    // Use SendGrid if configured (requires @sendgrid/mail package)
-    if (this.SENDGRID_API_KEY) {
-      console.warn("⚠️  SendGrid configured but @sendgrid/mail not installed. Run: npm install @sendgrid/mail");
-      console.log("📧 Email (SendGrid mock):", {
+      const data = await response.json();
+      
+      console.log("✅ Email sent successfully:", {
         to: params.to,
         subject: params.subject,
+        messageId: data.messageId,
       });
+
       return true;
+    } catch (error) {
+      console.error("❌ Failed to send email:", error);
+      console.log("📧 Email details (not sent):", {
+        to: params.to,
+        subject: params.subject,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      
+      // Don't throw - just log the error and return false
+      // This prevents email failures from blocking transfers
+      return false;
     }
-
-    // No email service configured - log warning
-    console.warn("⚠️  No email service configured. Set RESEND_API_KEY or SENDGRID_API_KEY in .env");
-    console.log("📧 Email (mock):", {
-      to: params.to,
-      subject: params.subject,
-      sendgridConfigured: !!this.SENDGRID_API_KEY,
-      resendConfigured: !!this.RESEND_API_KEY,
-    });
-
-    return true;
   }
 }
 

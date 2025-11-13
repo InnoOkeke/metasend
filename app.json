@@ -14,7 +14,10 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "MetaSend uses your location to show region-specific payment providers like Paycrest for African users."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -23,6 +26,10 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ],
       "intentFilters": [
         {
           "action": "VIEW",
@@ -55,7 +62,13 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "MetaSend uses your location to show region-specific payment providers like Paycrest for African users."
+        }
+      ]
     ],
     "extra": {
       "coinbaseAppId": "162ddeb1-c67e-43fa-b38b-78a916eb7cde",

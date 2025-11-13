@@ -20,7 +20,7 @@ export type RootStackParamList = {
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export const RootNavigator: React.FC = () => {
-  const { session, loading } = useCoinbase();
+  const { isConnected, loading } = useCoinbase();
   const { colors, scheme } = useTheme();
 
   const baseTheme = scheme === "dark" ? DarkTheme : DefaultTheme;
@@ -60,7 +60,7 @@ export const RootNavigator: React.FC = () => {
 
   return (
     <NavigationContainer theme={navigationTheme}>
-      {session ? (
+      {isConnected ? (
         <Stack.Navigator initialRouteName="Home" screenOptions={screenOptions}>
           <Stack.Screen name="Home" component={HomeScreen} options={{ title: "MetaSend" }} />
           <Stack.Screen name="Send" component={SendScreen} options={{ title: "Send USDC" }} />

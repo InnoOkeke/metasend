@@ -1,7 +1,6 @@
 import { resolveEmailToWallet } from "./addressResolution";
-import { CoinbaseSession, EmbeddedWalletProfile } from "./coinbase";
 import { sendEmail } from "./notifications";
-import { PaymasterRequest, sponsorTransaction, SponsoredTransaction } from "./paymaster";
+import { getUsdcBalance, encodeUsdcTransfer } from "./blockchain";
 import { BASE_CHAIN_ID, USDC_TOKEN_ADDRESS, USDC_DECIMALS } from "../config/coinbase";
 
 export type TransferIntent = {
@@ -21,7 +20,7 @@ export type TransferResult = {
 export type TransferRecord = TransferResult & {
   id: string;
   createdAt: string;
-  recipientWallet?: string;
+  senderWallet: string;
 };
 
 const transferHistory: TransferRecord[] = [];
@@ -32,10 +31,9 @@ export async function listTransfers(senderWallet: string): Promise<TransferRecor
 }
 
 export async function sendUsdcWithPaymaster(
-  profile: EmbeddedWalletProfile,
-  session: CoinbaseSession,
+  walletAddress: `0x${string}`,
   intent: TransferIntent,
-  sponsorFn: (request: PaymasterRequest) => Promise<SponsoredTransaction> = sponsorTransaction
+  sendUserOperationFn: (calls: any[]) => Promise<{ userOperationHash: string }>
 ): Promise<TransferResult> {
   const { recipientEmail, amountUsdc, memo } = intent;
 
@@ -43,7 +41,13 @@ export async function sendUsdcWithPaymaster(
     throw new Error("Amount must be greater than zero.");
   }
 
-  const senderAddress = assertHexAddress(profile.walletAddress, "Sender wallet");
+  // Check USDC balance before proceeding
+  const balance = await getUsdcBalance(walletAddress);
+  if (balance < amountUsdc) {
+    throw new Error(`Insufficient USDC balance. You have ${balance.toFixed(2)} USDC but need ${amountUsdc.toFixed(2)} USDC`);
+  }
+
+  const senderAddress = assertHexAddress(walletAddress, "Sender wallet");
   const contact = await resolveEmailToWallet({ email: recipientEmail });
 
   if (!contact.isRegistered || !contact.walletAddress) {
@@ -53,21 +57,24 @@ export async function sendUsdcWithPaymaster(
 
   const recipientAddress = assertHexAddress(contact.walletAddress, "Recipient wallet");
 
-  const estimatedUserOp = buildTransferUserOp({
-    sender: senderAddress,
-    recipient: recipientAddress,
-    amountUsdc,
-    memo,
-  });
+  // Encode USDC transfer call
+  const transferCallData = encodeUsdcTransfer(recipientAddress, amountUsdc);
 
-  const sponsorship = await sponsorFn(estimatedUserOp);
+  // Execute the user operation via CDP
+  const result = await sendUserOperationFn([
+    {
+      to: USDC_TOKEN_ADDRESS,
+      value: 0n,
+      data: transferCallData,
+    },
+  ]);
 
-  const txHash = sponsorship.userOpHash;
+  const txHash = result.userOperationHash as `0x${string}`;
 
   const record: TransferRecord = {
     id: `tx_${Date.now()}`,
     createdAt: new Date().toISOString(),
-  senderWallet: profile.walletAddress,
+    senderWallet: walletAddress,
     intent,
     status: "sent",
     txHash,
@@ -102,46 +109,6 @@ async function enqueuePendingTransfer(
 
   return record;
 }
-
-const buildTransferUserOp = ({
-  sender,
-  recipient,
-  amountUsdc,
-  memo,
-}: {
-  sender: `0x${string}`;
-  recipient: `0x${string}`;
-  amountUsdc: number;
-  memo?: string;
-}): PaymasterRequest => {
-  const amountScaled = BigInt(Math.floor(amountUsdc * Math.pow(10, USDC_DECIMALS)));
-  const data = encodeErc20Transfer(recipient, amountScaled, memo);
-  return {
-    chainId: BASE_CHAIN_ID,
-    sender,
-    target: USDC_TOKEN_ADDRESS,
-    data,
-  } satisfies PaymasterRequest;
-};
-
-const encodeErc20Transfer = (
-  recipient: `0x${string}`,
-  amount: bigint,
-  memo?: string
-): `0x${string}` => {
-  const methodId = "a9059cbb"; // transfer(address,uint256)
-  const recipientPadded = recipient.replace("0x", "").padStart(64, "0");
-  const amountHex = amount.toString(16).padStart(64, "0");
-  const baseCallData = `0x${methodId}${recipientPadded}${amountHex}` as `0x${string}`;
-  if (!memo) return baseCallData;
-  const memoHex = stringToHex(memo);
-  return (`${baseCallData}${memoHex}` as string).slice(0, 2 + 8 + 64 + 64 + memoHex.length) as `0x${string}`;
-};
-
-const stringToHex = (value: string): string =>
-  Array.from(value)
-    .map((char) => char.charCodeAt(0).toString(16).padStart(2, "0"))
-    .join("");
 
 const generateRedemptionCode = () =>
   Math.random()

@@ -1,5 +1,5 @@
 import { createPublicClient, http, encodeFunctionData, parseUnits } from "viem";
-import { base } from "viem/chains";
+import { baseSepolia } from "viem/chains";
 import { COINBASE_PAYMASTER_API_KEY, PAYMASTER_API_URL, USDC_TOKEN_ADDRESS, BASE_CHAIN_ID } from "../config/coinbase";
 
 export type PaymasterRequest = {
@@ -27,11 +27,18 @@ export type PaymasterContextValue = {
 /**
  * Coinbase Paymaster integration for gasless transactions on Base
  * Docs: https://docs.cdp.coinbase.com/paymaster/docs/welcome
+ * 
+ * ⚠️ IMPORTANT: This is currently using SIMULATED transactions
+ * Real implementation needs:
+ * 1. Check USDC balance before allowing transfer
+ * 2. Use CDP SDK's sendUserOperation to submit real transactions
+ * 3. Actually transfer USDC on Base Sepolia network
+ * 4. Handle real errors (insufficient balance, network issues, etc.)
  */
 export async function sponsorTransaction(request: PaymasterRequest): Promise<SponsoredTransaction> {
-  // Validate Base chain
+  // Validate Base Sepolia chain
   if (request.chainId !== BASE_CHAIN_ID) {
-    throw new Error("Only Base network is supported");
+    throw new Error("Only Base Sepolia testnet is supported");
   }
 
   // Check for API key
@@ -41,13 +48,15 @@ export async function sponsorTransaction(request: PaymasterRequest): Promise<Spo
   }
 
   try {
-    // Create public client for Base
+    // Create public client for Base Sepolia
     const client = createPublicClient({
-      chain: base,
+      chain: baseSepolia,
       transport: http(PAYMASTER_API_URL, {
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${COINBASE_PAYMASTER_API_KEY}`,
+        fetchOptions: {
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${COINBASE_PAYMASTER_API_KEY}`,
+          },
         },
       }),
     });
@@ -106,7 +115,10 @@ export async function sponsorTransaction(request: PaymasterRequest): Promise<Spo
 
 /**
  * Simulate transaction submission after sponsorship
- * In production, this would actually submit the UserOperation to the bundler
+ * 
+ * ⚠️ TODO: Replace with real transaction submission
+ * Should use CDP SDK's sendUserOperation or smart account transaction methods
+ * to actually submit the UserOperation to the Base Sepolia bundler
  */
 async function simulateTransactionSubmission(
   request: PaymasterRequest,
@@ -131,6 +143,9 @@ async function simulateTransactionSubmission(
 
 /**
  * Mock sponsorship for development when API key is not configured
+ * 
+ * ⚠️ WARNING: This does NOT execute real blockchain transactions
+ * Configure COINBASE_PAYMASTER_API_KEY to enable real gasless transactions
  */
 async function mockSponsorTransaction(request: PaymasterRequest): Promise<SponsoredTransaction> {
   await artificialLatency();

@@ -4,7 +4,7 @@
     "slug": "metasend",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/AppIcons/appstore.png",
     "scheme": "metasend",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -18,7 +18,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/icon.png",
+        "foregroundImage": "./assets/AppIcons/playstore.png",
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,

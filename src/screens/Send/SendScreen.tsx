@@ -2,13 +2,14 @@ import React, { useMemo, useState } from "react";
 import { Keyboard, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
+import { useSendUserOperation } from "@coinbase/cdp-hooks";
 
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { TextField } from "../../components/TextField";
 import { useCoinbase } from "../../providers/CoinbaseProvider";
-import { usePaymaster } from "../../providers/PaymasterProvider";
 import { resolveEmailToWallet } from "../../services/addressResolution";
 import { sendUsdcWithPaymaster, TransferIntent, TransferResult } from "../../services/transfers";
+import { getUsdcBalance } from "../../services/blockchain";
 import { useTheme } from "../../providers/ThemeProvider";
 import type { ColorPalette } from "../../utils/theme";
 import { spacing, typography } from "../../utils/theme";
@@ -28,8 +29,8 @@ type FormState = {
 type FieldErrors = Partial<Record<keyof FormState, string>>;
 
 export const SendScreen: React.FC = () => {
-  const { profile, session, refreshSession, loading: coinbaseLoading } = useCoinbase();
-  const { sponsor, isSponsoring, lastSponsorError } = usePaymaster();
+  const { profile } = useCoinbase();
+  const { sendUserOperation, status: sendStatus, error: sendError } = useSendUserOperation();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const queryClient = useQueryClient();
@@ -37,12 +38,23 @@ export const SendScreen: React.FC = () => {
   const [errors, setErrors] = useState<FieldErrors>({});
   const [result, setResult] = useState<TransferResult | null>(null);
 
-  if (!profile || !session) {
+  // Query USDC balance
+  const { data: usdcBalance, isLoading: loadingBalance } = useQuery({
+    queryKey: ["usdcBalance", profile?.walletAddress],
+    queryFn: () => {
+      if (!profile?.walletAddress) throw new Error("No wallet");
+      return getUsdcBalance(profile.walletAddress as `0x${string}`);
+    },
+    enabled: Boolean(profile?.walletAddress),
+    refetchInterval: 10000, // Refetch every 10 seconds
+  });
+
+  if (!profile) {
     return (
       <View style={styles.container}>
         <View style={styles.card}>
-          <Text style={styles.title}>Wallet session expired</Text>
-          <Text style={styles.subtitle}>Return to Home and reconnect your Coinbase embedded wallet.</Text>
+          <Text style={styles.title}>Wallet not connected</Text>
+          <Text style={styles.subtitle}>Please sign in with your Coinbase Smart Wallet to send USDC.</Text>
         </View>
       </View>
     );
@@ -54,10 +66,8 @@ export const SendScreen: React.FC = () => {
         <View style={styles.card}>
           <Text style={styles.title}>Base wallet not ready</Text>
           <Text style={styles.subtitle}>
-            Your Coinbase Smart Wallet doesn&apos;t have a Base address yet. Create or fund a Base USDC account in
-            Coinbase, then refresh MetaSend.
+            Your Coinbase Smart Wallet is being created. Please wait a moment and try again.
           </Text>
-          <PrimaryButton title="Refresh wallet" onPress={refreshSession} loading={coinbaseLoading} />
         </View>
       </View>
     );
@@ -74,10 +84,27 @@ export const SendScreen: React.FC = () => {
 
   const mutation = useMutation({
     mutationFn: async (intent: TransferIntent) => {
-      return sendUsdcWithPaymaster(profile, session, intent, sponsor);
+      if (!profile?.walletAddress) throw new Error("Wallet not connected");
+      
+      // Create sendUserOperation function for the transfer service
+      const sendUserOpFn = async (calls: any[]) => {
+        return await sendUserOperation({
+          evmSmartAccount: profile.walletAddress as `0x${string}`,
+          network: "base-sepolia",
+          calls,
+          useCdpPaymaster: true, // Use Coinbase Paymaster for gasless transactions
+        });
+      };
+      
+      return sendUsdcWithPaymaster(
+        profile.walletAddress as `0x${string}`,
+        intent,
+        sendUserOpFn
+      );
     },
     onSuccess: async (payload) => {
       await queryClient.invalidateQueries({ queryKey: ["transfers", profile?.walletAddress] });
+      await queryClient.invalidateQueries({ queryKey: ["usdcBalance", profile?.walletAddress] });
       setResult(payload);
       setForm((prev) => ({ ...prev, amount: "", memo: "" }));
     },
@@ -164,6 +191,12 @@ export const SendScreen: React.FC = () => {
           onChangeText={(value) => handleChange("amount", value)}
           error={errors.amount}
         />
+        
+        {usdcBalance !== undefined && (
+          <Text style={styles.balanceText}>
+            Balance: {usdcBalance.toFixed(2)} USDC
+          </Text>
+        )}
 
         <TextField
           label="Memo (optional)"
@@ -176,7 +209,7 @@ export const SendScreen: React.FC = () => {
         <PrimaryButton
           title="Review & Send"
           onPress={handleSubmit}
-          loading={mutation.isPending || isSponsoring}
+          loading={mutation.isPending || sendStatus === "pending"}
         />
 
         {mutation.error ? (
@@ -186,7 +219,7 @@ export const SendScreen: React.FC = () => {
               : "Something went wrong while sending the transfer."}
           </Text>
         ) : null}
-        {lastSponsorError ? <Text style={styles.error}>{lastSponsorError}</Text> : null}
+        {sendError ? <Text style={styles.error}>{sendError.message}</Text> : null}
         {statusMessage ? <Text style={styles.success}>{statusMessage}</Text> : null}
       </View>
     </ScrollView>
@@ -217,6 +250,12 @@ const createStyles = (colors: ColorPalette) =>
     },
     lookup: {
       color: colors.textSecondary,
+      marginBottom: spacing.sm,
+    },
+    balanceText: {
+      color: colors.textSecondary,
+      fontSize: 14,
+      marginTop: -spacing.sm,
       marginBottom: spacing.sm,
     },
     error: {

@@ -5,7 +5,8 @@ export default ({ config }) => ({
   extra: {
     ...config.extra,
     // Coinbase Configuration
-    coinbaseAppId: process.env.COINBASE_APP_ID || "162ddeb1-c67e-43fa-b38b-78a916eb7cde",
+    coinbaseAppId: process.env.COINBASE_APP_ID || "",
+    cdpProjectId: process.env.CDP_PROJECT_ID || "",
     coinbaseOAuthClientId: process.env.COINBASE_OAUTH_CLIENT_ID || "",
     coinbaseRedirectScheme: process.env.COINBASE_REDIRECT_SCHEME || "metasend",
     coinbaseApiKey: process.env.COINBASE_API_KEY || "",

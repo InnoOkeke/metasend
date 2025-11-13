@@ -4,11 +4,11 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useFocusEffect } from "@react-navigation/native";
 import { useQuery } from "@tanstack/react-query";
 
-import { Avatar } from "../components/Avatar";
 import { PrimaryButton } from "../components/PrimaryButton";
 import { useCoinbase } from "../providers/CoinbaseProvider";
 import { useTheme } from "../providers/ThemeProvider";
 import { listTransfers, TransferRecord } from "../services/transfers";
+import { getUsdcBalance } from "../services/blockchain";
 import { RootStackParamList } from "../navigation/RootNavigator";
 import { spacing, typography } from "../utils/theme";
 import type { ColorPalette } from "../utils/theme";
@@ -23,6 +23,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   const [isExchangeModalVisible, setIsExchangeModalVisible] = useState(false);
 
   const hasBaseWallet = Boolean(profile?.walletAddress && profile.walletAddress.startsWith("0x"));
+
+  // Query USDC balance
+  const { data: usdcBalance, isLoading: loadingBalance, refetch: refetchBalance } = useQuery({
+    queryKey: ["usdcBalance", profile?.walletAddress],
+    queryFn: () => {
+      if (!profile?.walletAddress) throw new Error("No wallet");
+      return getUsdcBalance(profile.walletAddress as `0x${string}`);
+    },
+    enabled: hasBaseWallet,
+    refetchInterval: 10000, // Refetch every 10 seconds
+  });
 
   const { data: transfers, refetch, isLoading, isRefetching } = useQuery({
     queryKey: ["transfers", profile?.walletAddress],
@@ -39,8 +50,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     useCallback(() => {
       if (hasBaseWallet) {
         refetch();
+        refetchBalance();
       }
-    }, [hasBaseWallet, refetch])
+    }, [hasBaseWallet, refetch, refetchBalance])
   );
 
   const renderItem = ({ item }: ListRenderItemInfo<TransferRecord>) => (
@@ -65,7 +77,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     <View style={styles.container}>
       <View style={styles.heroCard}>
         <View style={styles.profileRow}>
-          <Avatar name={profile?.displayName ?? profile?.email} uri={profile?.photoUrl} size={48} />
           <View style={styles.profileDetails}>
             <Text style={styles.greeting}>Welcome back,</Text>
             <Text style={styles.username}>{profile?.displayName ?? profile?.email}</Text>
@@ -73,8 +84,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         </View>
         <View style={styles.balanceSection}>
           <Text style={styles.balanceLabel}>Total Balance</Text>
-          <Text style={styles.balanceAmount}>$0.00</Text>
-          <Text style={styles.balanceSubtext}>USDC on Base Network</Text>
+          <Text style={styles.balanceAmount}>
+            {loadingBalance ? "..." : usdcBalance !== undefined ? `$${usdcBalance.toFixed(2)}` : "$0.00"}
+          </Text>
+          <Text style={styles.balanceSubtext}>USDC on Base Sepolia</Text>
         </View>
         <View style={styles.walletPill}>
           <Text style={styles.walletLabel}>📍 Wallet</Text>
@@ -200,9 +213,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         <TouchableOpacity 
           style={styles.exchangeButton}
           onPress={() => setIsExchangeModalVisible(true)}
-          activeOpacity={0.8}
+          activeOpacity={0.7}
         >
-          <Text style={styles.exchangeIcon}>💱</Text>
+          <View style={styles.exchangeIconWrapper}>
+            <Text style={styles.exchangeIconText}>+</Text>
+          </View>
         </TouchableOpacity>
       </View>
     </View>
@@ -394,30 +409,38 @@ const createStyles = (colors: ColorPalette) =>
       bottom: 0,
       left: 0,
       right: 0,
-      height: 80,
-      backgroundColor: colors.cardBackground,
+      height: 84,
+      backgroundColor: colors.background,
       borderTopWidth: 1,
-      borderTopColor: colors.border,
+      borderTopColor: `${colors.border}40`,
       alignItems: "center",
       justifyContent: "center",
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: -4 },
-      shadowOpacity: 0.1,
-      shadowRadius: 8,
-      elevation: 10,
+      paddingBottom: spacing.sm,
     },
     exchangeButton: {
-      width: 64,
-      height: 64,
-      borderRadius: 32,
+      width: 56,
+      height: 56,
+      borderRadius: 28,
       backgroundColor: colors.primary,
       alignItems: "center",
       justifyContent: "center",
       shadowColor: colors.primary,
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.3,
-      shadowRadius: 12,
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.25,
+      shadowRadius: 16,
       elevation: 8,
+    },
+    exchangeIconWrapper: {
+      width: "100%",
+      height: "100%",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    exchangeIconText: {
+      fontSize: 28,
+      fontWeight: "300",
+      color: "#FFFFFF",
+      lineHeight: 28,
     },
     exchangeIcon: {
       fontSize: 32,

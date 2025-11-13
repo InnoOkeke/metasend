@@ -1,62 +1,175 @@
 import React, { useMemo, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { useSignInWithEmail, useVerifyEmailOTP, useIsSignedIn, CDPContext } from "@coinbase/cdp-hooks";
 
 import { PrimaryButton } from "../../components/PrimaryButton";
-import { useCoinbase } from "../../providers/CoinbaseProvider";
-import type { CoinbaseSignInStrategy } from "../../services/coinbase";
 import { useTheme } from "../../providers/ThemeProvider";
 import type { ColorPalette } from "../../utils/theme";
 import { typography } from "../../utils/theme";
 
+type AuthMethod = "email";
+type AuthStep = "method" | "otp";
+
 export const SignInScreen: React.FC = () => {
-  const { connect, loading, error } = useCoinbase();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const [activeStrategy, setActiveStrategy] = useState<CoinbaseSignInStrategy | null>(null);
+  
+  const cdpContext = React.useContext(CDPContext);
+  const { isSignedIn } = useIsSignedIn();
+  const { signInWithEmail } = useSignInWithEmail();
+  const { verifyEmailOTP } = useVerifyEmailOTP();
+  
+  const [step, setStep] = useState<AuthStep>("method");
+  const [authMethod, setAuthMethod] = useState<AuthMethod | null>(null);
+  const [email, setEmail] = useState("");
+  const [otp, setOtp] = useState("");
+  const [flowId, setFlowId] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleConnect = async (strategy: CoinbaseSignInStrategy) => {
-    setActiveStrategy(strategy);
+  // Check if CDP is initialized
+  React.useEffect(() => {
+    if (!cdpContext) {
+      setError("Wallet SDK not initialized. Please check your configuration.");
+    }
+  }, [cdpContext]);
+
+  const handleEmailSubmit = async () => {
+    if (!email.trim()) {
+      setError("Please enter your email");
+      return;
+    }
+    
+    setError(null);
+    setLoading(true);
+    setAuthMethod("email");
+    
     try {
-      await connect(strategy);
+      const result = await signInWithEmail({ email: email.trim() });
+      setFlowId(result.flowId);
+      setStep("otp");
+    } catch (err) {
+      console.error("Email sign-in error:", err);
+      setError(err instanceof Error ? err.message : "Failed to send verification email");
+      setAuthMethod(null);
     } finally {
-      setActiveStrategy(null);
+      setLoading(false);
     }
   };
+
+  const handleOtpSubmit = async () => {
+    if (!otp.trim()) {
+      setError("Please enter the verification code");
+      return;
+    }
+    
+    setError(null);
+    setLoading(true);
+    
+    try {
+      await verifyEmailOTP({ flowId, otp: otp.trim() });
+      // User will be signed in, isSignedIn will become true
+    } catch (err) {
+      console.error("OTP verification error:", err);
+      setError(err instanceof Error ? err.message : "Invalid verification code");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (isSignedIn && cdpContext?.currentUser) {
+    const walletAddress = cdpContext.currentUser.evmSmartAccounts?.[0] || cdpContext.currentUser.evmAccounts?.[0];
+    const authMethods = cdpContext.currentUser.authenticationMethods;
+    const userEmail = authMethods.email?.email || authMethods.google?.email || authMethods.apple?.email;
+    
+    return (
+      <View style={styles.container}>
+        <Text style={styles.title}>✅ Signed In</Text>
+        <Text style={styles.subtitle}>Wallet: {walletAddress}</Text>
+        {userEmail && <Text style={styles.subtitle}>Email: {userEmail}</Text>}
+        <Text style={styles.subtitle}>User ID: {cdpContext.currentUser.userId}</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>MetaSend</Text>
-      <Text style={styles.subtitle}>Send USDC to any email. Base network, gasless via Coinbase Paymaster.</Text>
+      <Text style={styles.subtitle}>Send USDC to any email. Base Sepolia testnet, gasless via Coinbase Paymaster.</Text>
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Get started</Text>
         <Text style={styles.cardBody}>
-          Sign in with your Coinbase Smart Wallet to create or resume your MetaSend account.
+          Sign in with email to create your embedded smart wallet.
         </Text>
-        <PrimaryButton
-          title="Continue with Email"
-          onPress={() => handleConnect("email")}
-          loading={loading && activeStrategy === "email"}
-          disabled={loading && activeStrategy === "social"}
-        />
-        <PrimaryButton
-          title="Continue with Social"
-          onPress={() => handleConnect("social")}
-          loading={loading && activeStrategy === "social"}
-          disabled={loading && activeStrategy === "email"}
-          variant="accent"
-        />
-        {loading ? (
+        
+        {step === "method" && (
+          <View style={styles.section}>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter your email"
+              placeholderTextColor={colors.textSecondary}
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              editable={!loading}
+            />
+            <PrimaryButton
+              title="Continue with Email"
+              onPress={handleEmailSubmit}
+              loading={loading && authMethod === "email"}
+              disabled={loading}
+            />
+          </View>
+        )}
+
+        {step === "otp" && (
+          <>
+            <Text style={styles.otpInfo}>
+              We sent a verification code to {email}
+            </Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter 6-digit code"
+              placeholderTextColor={colors.textSecondary}
+              value={otp}
+              onChangeText={setOtp}
+              keyboardType="number-pad"
+              maxLength={6}
+              editable={!loading}
+            />
+            <PrimaryButton
+              title="Verify Code"
+              onPress={handleOtpSubmit}
+              loading={loading}
+            />
+            <TouchableOpacity
+              onPress={() => {
+                setStep("method");
+                setOtp("");
+                setError(null);
+                setAuthMethod(null);
+              }}
+              disabled={loading}
+              style={styles.backButton}
+            >
+              <Text style={styles.backButtonText}>← Back to sign in</Text>
+            </TouchableOpacity>
+          </>
+        )}
+
+        {loading && (
           <View style={styles.hintRow}>
             <ActivityIndicator color={colors.textSecondary} size="small" />
             <Text style={styles.hintText}>
-              {activeStrategy === "social"
-                ? "Opening Coinbase social sign-in..."
-                : "Launching Coinbase email sign-in..."}
+              {authMethod === "email" && step === "method" && "Sending verification email..."}
+              {authMethod === "email" && step === "otp" && "Verifying code..."}
             </Text>
           </View>
-        ) : null}
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+        )}
+        
+        {error && <Text style={styles.errorText}>{error}</Text>}
       </View>
     </View>
   );
@@ -98,6 +211,53 @@ const createStyles = (colors: ColorPalette) =>
     cardBody: {
       ...typography.body,
       color: colors.textSecondary,
+    },
+    section: {
+      rowGap: 12,
+    },
+    sectionLabel: {
+      ...typography.subtitle,
+      color: colors.textPrimary,
+      fontSize: 14,
+      marginBottom: 4,
+    },
+    divider: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginVertical: 8,
+    },
+    dividerLine: {
+      flex: 1,
+      height: 1,
+      backgroundColor: colors.border,
+    },
+    dividerText: {
+      ...typography.body,
+      color: colors.textSecondary,
+      paddingHorizontal: 12,
+      fontSize: 12,
+    },
+    input: {
+      backgroundColor: colors.background,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 12,
+      padding: 16,
+      color: colors.textPrimary,
+      fontSize: 16,
+    },
+    otpInfo: {
+      ...typography.body,
+      color: colors.textPrimary,
+      textAlign: "center",
+    },
+    backButton: {
+      padding: 12,
+      alignItems: "center",
+    },
+    backButtonText: {
+      ...typography.body,
+      color: colors.primary,
     },
     hintRow: {
       flexDirection: "row",

@@ -20,14 +20,14 @@ export const COINBASE_API_KEY = extra.coinbaseApiKey ?? "";
 export const COINBASE_API_SECRET = extra.coinbaseApiSecret ?? "";
 export const COINBASE_PAYMASTER_API_KEY = extra.coinbasePaymasterApiKey ?? "";
 
-// Base Network Constants
-export const BASE_CHAIN_ID = 8453; // Base Mainnet
-export const BASE_RPC_URL = "https://mainnet.base.org";
-export const USDC_TOKEN_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdda1e56" as const; // USDC on Base
+// Base Network Constants - Using Sepolia Testnet
+export const BASE_CHAIN_ID = 84532; // Base Sepolia Testnet
+export const BASE_RPC_URL = "https://sepolia.base.org";
+export const USDC_TOKEN_ADDRESS = "0x036CbD53842c5426634e7929541eC2318f3dCF7e" as const; // USDC on Base Sepolia
 export const USDC_DECIMALS = 6;
 
 // Coinbase Paymaster API
-export const PAYMASTER_API_URL = "https://api.developer.coinbase.com/rpc/v1/base";
+export const PAYMASTER_API_URL = "https://api.developer.coinbase.com/rpc/v1/base-sepolia";
 
 export const COINBASE_OAUTH_SCOPES = [
   "wallet:user:read",

@@ -5,6 +5,7 @@ import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
+import { CDPProvider } from "./src/providers/CDPProvider";
 import { CoinbaseProvider } from "./src/providers/CoinbaseProvider";
 import { PaymasterProvider } from "./src/providers/PaymasterProvider";
 import { ThemeProvider, useTheme } from "./src/providers/ThemeProvider";
@@ -16,13 +17,15 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <CoinbaseProvider>
-          <PaymasterProvider>
-            <SafeAreaProvider>
-              <ThemedAppShell />
-            </SafeAreaProvider>
-          </PaymasterProvider>
-        </CoinbaseProvider>
+        <CDPProvider>
+          <CoinbaseProvider>
+            <PaymasterProvider>
+              <SafeAreaProvider>
+                <ThemedAppShell />
+              </SafeAreaProvider>
+            </PaymasterProvider>
+          </CoinbaseProvider>
+        </CDPProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );

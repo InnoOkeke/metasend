@@ -26,10 +26,10 @@
 ✅ COINBASE_APP_ID=73c61525-e3c0-4e81-9d91-ae8861f75f8c
 ✅ COINBASE_OAUTH_CLIENT_ID=i3E40rkZc9ZDT3ldjpM9BPhQAh1QypW5
 ✅ COINBASE_PAYMASTER_API_KEY=i3E40rkZc9ZDT3ldjpM9BPhQAh1QypW5
-✅ RESEND_API_KEY=re_6W1Umb2x_LtjZMjVDVMZqwMmCwni2JLPJ
-✅ ESCROW_MASTER_KEY=f67c14c308a0f0890a30c7c8716ff4f9592ad37959ba79c89b1be90805a6a506
+✅ RESEND_API_KEY=<configured>
+✅ ESCROW_MASTER_KEY=<configured>
 ✅ MONGODB_URI=mongodb+srv://leprofcode_db_user:***@cluster0.c0iznmv.mongodb.net/metasend
-⚠️  CRON_SECRET= (need to generate)
+✅ CRON_SECRET=<configured>
 ```
 
 ## Next Steps

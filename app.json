@@ -1,0 +1,66 @@
+{
+  "expo": {
+    "name": "metasend",
+    "slug": "metasend",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "metasend",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [
+            {
+              "scheme": "metasend"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        },
+        {
+          "action": "VIEW",
+          "data": [
+            {
+              "scheme": "metasend"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ],
+      "package": "com.kellonapp.metasend"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-secure-store"
+    ],
+    "extra": {
+      "coinbaseAppId": "162ddeb1-c67e-43fa-b38b-78a916eb7cde",
+      "coinbaseOAuthClientId": "YOUR-COINBASE-OAUTH-CLIENT-ID",
+      "coinbaseRedirectScheme": "metasend"
+    }
+  }
+}

@@ -78,14 +78,14 @@ export const SignInScreen: React.FC = () => {
   };
 
   if (isSignedIn && cdpContext?.currentUser) {
-    const walletAddress = cdpContext.currentUser.evmSmartAccounts?.[0] || cdpContext.currentUser.evmAccounts?.[0];
+    const walletAddress = cdpContext.currentUser.evmSmartAccounts?.[0];
     const authMethods = cdpContext.currentUser.authenticationMethods;
     const userEmail = authMethods.email?.email || authMethods.google?.email || authMethods.apple?.email;
     
     return (
       <View style={styles.container}>
         <Text style={styles.title}>✅ Signed In</Text>
-        <Text style={styles.subtitle}>Wallet: {walletAddress}</Text>
+        <Text style={styles.subtitle}>Smart account: {walletAddress || "Unavailable"}</Text>
         {userEmail && <Text style={styles.subtitle}>Email: {userEmail}</Text>}
         <Text style={styles.subtitle}>User ID: {cdpContext.currentUser.userId}</Text>
       </View>

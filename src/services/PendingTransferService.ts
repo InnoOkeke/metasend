@@ -10,6 +10,28 @@ import { emailNotificationService } from "./EmailNotificationService";
 import { userDirectoryService } from "./UserDirectoryService";
 import { PendingTransfer, ChainType } from "../types/database";
 
+declare const require: any;
+
+type ExpoExtra = {
+  metasendApiBaseUrl?: string;
+  metasendApiKey?: string;
+};
+
+const isReactNative = typeof navigator !== "undefined" && navigator.product === "ReactNative";
+
+const getExpoExtra = (): ExpoExtra => {
+  if (!isReactNative) {
+    return {};
+  }
+
+  try {
+    const Constants = require("expo-constants").default;
+    return (Constants?.expoConfig?.extra ?? {}) as ExpoExtra;
+  } catch (_error) {
+    return {};
+  }
+};
+
 export const CreatePendingTransferSchema = z.object({
   recipientEmail: z.string().email(),
   senderUserId: z.string(),
@@ -39,11 +61,54 @@ export type PendingTransferSummary = {
 class PendingTransferService {
   private readonly EXPIRY_DAYS = 7;
   private readonly REMINDER_HOURS = 48; // Send reminder 48 hours before expiry
+  private readonly useRemoteApi = isReactNative;
+  private readonly extra = getExpoExtra();
+  private readonly apiBaseUrl =
+    (isReactNative ? this.extra.metasendApiBaseUrl : process.env.METASEND_API_BASE_URL) || "";
+  private readonly apiKey =
+    (isReactNative ? this.extra.metasendApiKey : process.env.METASEND_API_KEY) || "";
+
+  private ensureApiConfig() {
+    if (!this.apiBaseUrl || !this.apiKey) {
+      throw new Error("MetaSend API configuration missing. Set METASEND_API_BASE_URL and METASEND_API_KEY.");
+    }
+  }
+
+  private async request<T>(path: string, init?: RequestInit): Promise<T> {
+    this.ensureApiConfig();
+
+    const response = await fetch(`${this.apiBaseUrl}${path}`, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.apiKey}`,
+        ...(init?.headers || {}),
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || `Request failed with status ${response.status}`);
+    }
+
+    return (await response.json()) as T;
+  }
 
   /**
    * Create a new pending transfer
    */
   async createPendingTransfer(request: CreatePendingTransferRequest): Promise<PendingTransfer> {
+    if (this.useRemoteApi) {
+      const result = await this.request<{ success: boolean; transfer: PendingTransfer }>(
+        "/api/pending-transfers",
+        {
+          method: "POST",
+          body: JSON.stringify(request),
+        }
+      );
+      return result.transfer;
+    }
+
     const validated = CreatePendingTransferSchema.parse(request);
 
     // Get sender details
@@ -100,6 +165,7 @@ class PendingTransferService {
     await emailNotificationService.sendInviteWithPendingTransfer(
       validated.recipientEmail,
       sender.displayName || sender.email,
+      sender.email,
       validated.amount,
       validated.token,
       transferId
@@ -122,6 +188,13 @@ class PendingTransferService {
    * Get pending transfers for a recipient email
    */
   async getPendingTransfers(recipientEmail: string): Promise<PendingTransferSummary[]> {
+    if (this.useRemoteApi) {
+      const result = await this.request<{ success: boolean; transfers?: PendingTransferSummary[] }>(
+        `/api/pending-transfers?recipientEmail=${encodeURIComponent(recipientEmail)}`
+      );
+      return result.transfers ?? [];
+    }
+
     const transfers = await db.getPendingTransfersByRecipientEmail(recipientEmail);
     
     return transfers.map((transfer) => ({
@@ -142,6 +215,13 @@ class PendingTransferService {
    * Get pending transfers sent by a user
    */
   async getSentPendingTransfers(senderUserId: string): Promise<PendingTransferSummary[]> {
+    if (this.useRemoteApi) {
+      const result = await this.request<{ success: boolean; transfers?: PendingTransferSummary[] }>(
+        `/api/pending-transfers?senderUserId=${encodeURIComponent(senderUserId)}`
+      );
+      return result.transfers ?? [];
+    }
+
     const transfers = await db.getPendingTransfersBySender(senderUserId);
     
     return transfers
@@ -164,6 +244,21 @@ class PendingTransferService {
    * Claim a pending transfer
    */
   async claimPendingTransfer(transferId: string, claimantUserId: string): Promise<string> {
+    if (this.useRemoteApi) {
+      const result = await this.request<{ success: boolean; claimTransactionHash: string }>(
+        "/api/pending-transfers",
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            action: "claim",
+            transferId,
+            claimantUserId,
+          }),
+        }
+      );
+      return result.claimTransactionHash;
+    }
+
     const transfer = await db.getPendingTransferById(transferId);
     
     if (!transfer) {
@@ -232,6 +327,21 @@ class PendingTransferService {
    * Cancel a pending transfer (sender only)
    */
   async cancelPendingTransfer(transferId: string, senderUserId: string): Promise<string> {
+    if (this.useRemoteApi) {
+      const result = await this.request<{ success: boolean; claimTransactionHash: string }>(
+        "/api/pending-transfers",
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            action: "cancel",
+            transferId,
+            senderUserId,
+          }),
+        }
+      );
+      return result.claimTransactionHash;
+    }
+
     const transfer = await db.getPendingTransferById(transferId);
     
     if (!transfer) {
@@ -359,6 +469,21 @@ class PendingTransferService {
    * Auto-claim pending transfers when a user signs up
    */
   async autoClaimForNewUser(userId: string, email: string): Promise<number> {
+    if (this.useRemoteApi) {
+      const result = await this.request<{ success: boolean; claimedCount: number }>(
+        "/api/pending-transfers",
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            action: "auto-claim",
+            userId,
+            email,
+          }),
+        }
+      );
+      return result.claimedCount;
+    }
+
     const pendingTransfers = await db.getPendingTransfersByRecipientEmail(email);
     let claimedCount = 0;
 
@@ -380,6 +505,13 @@ class PendingTransferService {
    * Get transfer details
    */
   async getTransferDetails(transferId: string): Promise<PendingTransfer | null> {
+    if (this.useRemoteApi) {
+      const result = await this.request<{ success: boolean; transfer?: PendingTransfer }>(
+        `/api/pending-transfers?transferId=${encodeURIComponent(transferId)}`
+      );
+      return result.transfer ?? null;
+    }
+
     return db.getPendingTransferById(transferId);
   }
 

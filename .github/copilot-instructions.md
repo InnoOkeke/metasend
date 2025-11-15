@@ -65,7 +65,7 @@ Access via `Constants.expoConfig.extra` in services.
 The in-memory database is production-ready:
 - Complete TypeScript types in `src/types/database.ts`
 - Abstract interface for easy swap to Firebase/Supabase/MongoDB
-- Seeded with demo users: alice@metasend.io, bob@metasend.io
+- No bundled demo users—signups flow through Coinbase to create accounts.
 
 ### Code Style
 - TypeScript strict mode enabled

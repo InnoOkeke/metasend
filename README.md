@@ -197,7 +197,7 @@ src/
 
 ### Development Workflow
 
-- **Mock Data:** The app includes seeded demo users (alice@metasend.io, bob@metasend.io)
+- **Live Data Only:** Demo seeds have been removed—use Coinbase signup plus `npm run backfill` (with your own JSON payloads) if you need fixtures.
 - **Environment Variables:** All credentials are in `.env` (gitignored)
 - **TypeScript Strict Mode:** Full type safety throughout the codebase
 - **Service Layer:** Clean separation between UI and business logic

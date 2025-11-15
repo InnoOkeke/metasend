@@ -58,7 +58,8 @@ export const CDPProvider: React.FC<PropsWithChildren> = ({ children }) => {
           createOnLogin: "smart", // Create smart accounts with ERC-4337
           enableSpendPermissions: true,
         },
-        nativeOAuthCallback,
+        // Type definitions expect a string, but the runtime SDK supports a callback function.
+        nativeOAuthCallback: nativeOAuthCallback as unknown as string,
       }}
     >
       {children}

@@ -1,8 +1,10 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useIsSignedIn, useSignOut, CDPContext } from "@coinbase/cdp-hooks";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { userDirectoryService } from "../services/UserDirectoryService";
 import { pendingTransferService } from "../services/PendingTransferService";
+import { BIOMETRIC_AUTH_KEY, RETURNING_USER_KEY } from "../constants/auth";
 
 export type CoinbaseProfile = {
   userId: string;
@@ -40,77 +42,65 @@ export const CoinbaseProvider: React.FC<React.PropsWithChildren> = ({ children }
         setProfile(null);
         return;
       }
-      
+
       console.log("👤 Current user:", {
         userId: currentUser.userId,
         evmSmartAccounts: currentUser.evmSmartAccounts,
-        evmAccounts: currentUser.evmAccounts,
         authMethods: currentUser.authenticationMethods,
       });
-      
-      // Get the first EVM smart account or EOA address
-      const walletAddress = currentUser.evmSmartAccounts?.[0] || currentUser.evmAccounts?.[0];
+
+      const walletAddress = currentUser.evmSmartAccounts?.[0];
       if (!walletAddress) {
-        console.log("⚠️ No wallet address found for user");
+        console.log("⚠️ No smart account address found for user");
         setProfile(null);
+        setError("Smart wallet not ready. Please retry sign in.");
         return;
       }
-      
-      console.log("💼 Wallet address found:", walletAddress);
-      
+
+      const authMethods = currentUser.authenticationMethods;
+      const email =
+        authMethods.email?.email ||
+        authMethods.google?.email ||
+        authMethods.apple?.email ||
+        authMethods.x?.email ||
+        `${walletAddress.slice(0, 8)}@wallet.metasend.io`;
+
+      const displayName = email.split("@")[0] || `User ${walletAddress.slice(0, 6)}`;
+
       try {
         setLoading(true);
         setError(null);
-        
-        const userId = currentUser.userId;
-        // Get email from any auth method (email, google, apple, x)
-        const authMethods = currentUser.authenticationMethods;
-        const email = 
-          authMethods.email?.email || 
-          authMethods.google?.email || 
-          authMethods.apple?.email ||
-          authMethods.x?.email ||
-          `${walletAddress.slice(0, 8)}@wallet.metasend.io`;
-        
-        const displayName = email.split('@')[0] || `User ${walletAddress.slice(0, 6)}`;
-        
-        // Set profile immediately (photoUrl not available from OAuth2Authentication)
-        const userProfile = {
-          userId,
+
+        const directoryProfile = await userDirectoryService.registerUser({
+          userId: currentUser.userId,
           email,
+          emailVerified: true,
           walletAddress,
           displayName,
-          photoUrl: undefined,
+        });
+
+        const syncedProfile: CoinbaseProfile = {
+          userId: directoryProfile.userId,
+          email: directoryProfile.email,
+          walletAddress: directoryProfile.wallets.evm || walletAddress,
+          displayName: directoryProfile.displayName || displayName,
+          photoUrl: directoryProfile.avatar,
         };
-        
-        console.log("✅ Setting profile:", userProfile);
-        setProfile(userProfile);
-        
-        // Register user in directory if new
-        const existingUser = await userDirectoryService.findUserByEmail(email);
-        if (!existingUser) {
-          console.log("📝 Registering new user in directory");
-          await userDirectoryService.registerUser({
-            userId,
-            email,
-            emailVerified: true,
-            walletAddress,
-            displayName,
-          });
-          
-          // Auto-claim any pending transfers for this email
-          const claimed = await pendingTransferService.autoClaimForNewUser(userId, email);
-          if (claimed > 0) {
-            console.log(`✅ Auto-claimed ${claimed} pending transfer(s)`);
-          }
-        } else {
-          console.log("👋 Existing user, updating last login");
-          // Update last login
-          await userDirectoryService.updateLastLogin(existingUser.userId);
+
+        console.log("✅ Directory synced profile:", syncedProfile);
+        setProfile(syncedProfile);
+
+        const claimed = await pendingTransferService.autoClaimForNewUser(
+          directoryProfile.userId,
+          directoryProfile.email
+        );
+        if (claimed > 0) {
+          console.log(`✅ Auto-claimed ${claimed} pending transfer(s)`);
         }
       } catch (err) {
-        console.error("❌ Error handling user sign in:", err);
-        setError(err instanceof Error ? err.message : "Failed to initialize wallet");
+        console.error("❌ Error syncing user directory:", err);
+        setProfile(null);
+        setError(err instanceof Error ? err.message : "Failed to sync MetaSend account");
       } finally {
         setLoading(false);
       }
@@ -119,20 +109,43 @@ export const CoinbaseProvider: React.FC<React.PropsWithChildren> = ({ children }
     handleUserSignedIn();
   }, [isSignedIn, currentUser]);
 
+  const clearLocalAuthState = useCallback(async () => {
+    try {
+      await AsyncStorage.multiRemove([BIOMETRIC_AUTH_KEY, RETURNING_USER_KEY]);
+    } catch (error) {
+      console.warn("Failed to clear auth flags on sign out", error);
+    }
+  }, []);
+
   const disconnect = useCallback(async () => {
     try {
       setLoading(true);
+      await clearLocalAuthState();
+
+      if (!isSignedIn) {
+        console.log("ℹ️ Already signed out");
+        setProfile(null);
+        return;
+      }
+
       await signOut();
       setProfile(null);
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes("User is not authenticated")) {
+        console.log("ℹ️ Sign out skipped: user already signed out");
+        setProfile(null);
+        return;
+      }
+
       console.warn("Failed to sign out", err);
       setError(err instanceof Error ? err.message : "Failed to sign out");
     } finally {
       setLoading(false);
     }
-  }, [signOut]);
+  }, [signOut, isSignedIn, clearLocalAuthState]);
 
-  const walletAddress = currentUser?.evmSmartAccounts?.[0] || currentUser?.evmAccounts?.[0] || null;
+  const walletAddress = currentUser?.evmSmartAccounts?.[0] || null;
 
   const value = useMemo<CoinbaseContextValue>(
     () => ({

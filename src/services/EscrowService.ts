@@ -3,9 +3,21 @@
  * Handles creation and management of temporary escrow wallets for pending transfers
  */
 
-import * as SecureStore from "expo-secure-store";
-import Constants from "expo-constants";
 import { ChainType } from "../types/database";
+
+declare const require: any;
+
+const isReactNative = typeof navigator !== "undefined" && navigator.product === "ReactNative";
+
+let SecureStore: typeof import("expo-secure-store") | null = null;
+if (isReactNative) {
+  try {
+    SecureStore = require("expo-secure-store");
+  } catch (error) {
+    console.warn("⚠️ SecureStore unavailable, falling back to in-memory key storage");
+    SecureStore = null;
+  }
+}
 
 export type EscrowWallet = {
   address: string;
@@ -26,7 +38,18 @@ type ExpoExtra = {
 
 class EscrowService {
   private readonly ENCRYPTION_KEY_STORAGE = "metasend.escrow.master.key";
-  private readonly extra = (Constants?.expoConfig?.extra ?? {}) as ExpoExtra;
+  private readonly extra = (() => {
+    if (!isReactNative) {
+      return {} as ExpoExtra;
+    }
+    try {
+      const Constants = require("expo-constants").default;
+      return (Constants?.expoConfig?.extra ?? {}) as ExpoExtra;
+    } catch (_error) {
+      return {} as ExpoExtra;
+    }
+  })();
+  private inMemoryMasterKey: string | null = null;
 
   /**
    * Generate a new escrow wallet for holding pending transfer funds
@@ -187,17 +210,28 @@ class EscrowService {
       return this.extra.escrowMasterKey;
     }
 
-    // Fallback to secure storage
-    let key = await SecureStore.getItemAsync(this.ENCRYPTION_KEY_STORAGE);
-
-    if (!key) {
-      // Generate new master key for development
-      key = Math.random().toString(36).substring(2) + Date.now().toString(36);
-      await SecureStore.setItemAsync(this.ENCRYPTION_KEY_STORAGE, key);
-      console.warn("⚠️  Generated new escrow master key. For production, set ESCROW_MASTER_KEY in .env");
+    if (process.env.ESCROW_MASTER_KEY) {
+      return process.env.ESCROW_MASTER_KEY;
     }
 
-    return key;
+    if (SecureStore) {
+      let key = await SecureStore.getItemAsync(this.ENCRYPTION_KEY_STORAGE);
+
+      if (!key) {
+        key = Math.random().toString(36).substring(2) + Date.now().toString(36);
+        await SecureStore.setItemAsync(this.ENCRYPTION_KEY_STORAGE, key);
+        console.warn("⚠️  Generated new escrow master key. For production, set ESCROW_MASTER_KEY in .env");
+      }
+
+      return key;
+    }
+
+    if (!this.inMemoryMasterKey) {
+      this.inMemoryMasterKey = Math.random().toString(36).substring(2) + Date.now().toString(36);
+      console.warn("⚠️ Using in-memory escrow master key. Set ESCROW_MASTER_KEY for persistence.");
+    }
+
+    return this.inMemoryMasterKey;
   }
 
   private delay(ms: number): Promise<void> {

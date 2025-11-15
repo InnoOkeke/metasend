@@ -4,8 +4,10 @@
  */
 
 import { MongoClient, Db, Collection } from "mongodb";
-import Constants from "expo-constants";
 import { User, PendingTransfer, Contact, TransferNotification } from "../types/database";
+import { TransferRecord } from "../types/transfers";
+
+declare const require: any;
 
 type ExpoExtra = {
   mongodbUri?: string;
@@ -14,7 +16,14 @@ type ExpoExtra = {
 class MongoDatabase {
   private client: MongoClient | null = null;
   private db: Db | null = null;
-  private readonly extra = (Constants?.expoConfig?.extra ?? {}) as ExpoExtra;
+  private readonly extra = (() => {
+    try {
+      const Constants = require("expo-constants").default;
+      return (Constants?.expoConfig?.extra ?? {}) as ExpoExtra;
+    } catch (_error) {
+      return {} as ExpoExtra;
+    }
+  })();
 
   private async connect(): Promise<Db> {
     if (this.db) return this.db;
@@ -55,6 +64,10 @@ class MongoDatabase {
     // Notifications indexes
     await this.db.collection("notifications").createIndex({ userId: 1, createdAt: -1 });
     await this.db.collection("notifications").createIndex({ notificationId: 1 }, { unique: true });
+
+    // Transfers indexes
+    await this.db.collection("transfers").createIndex({ senderWallet: 1, createdAt: -1 });
+    await this.db.collection("transfers").createIndex({ "intent.senderUserId": 1, createdAt: -1 });
   }
 
   private async getCollection<T extends Record<string, any>>(name: string): Promise<Collection<T>> {
@@ -211,6 +224,27 @@ class MongoDatabase {
       { $set: { read: true } as any }
     );
     return result.modifiedCount > 0;
+  }
+
+  async saveTransferRecord(record: TransferRecord): Promise<void> {
+    const collection = await this.getCollection<TransferRecord>("transfers");
+    await collection.insertOne(record as any);
+  }
+
+  async listTransferRecords(filter: { senderWallet?: string; senderUserId?: string; limit?: number } = {}): Promise<TransferRecord[]> {
+    const collection = await this.getCollection<TransferRecord>("transfers");
+    const query: Record<string, any> = {};
+
+    if (filter.senderWallet) {
+      query.senderWallet = { $regex: new RegExp(`^${filter.senderWallet}$`, "i") };
+    }
+
+    if (filter.senderUserId) {
+      query["intent.senderUserId"] = filter.senderUserId;
+    }
+
+    const limit = filter.limit ?? 50;
+    return await collection.find(query as any).sort({ createdAt: -1 }).limit(limit).toArray();
   }
 
   async close(): Promise<void> {

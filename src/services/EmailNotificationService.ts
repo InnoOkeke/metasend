@@ -9,7 +9,23 @@
  */
 
 import { PendingTransfer } from "../types/database";
-import Constants from "expo-constants";
+
+declare const require: any;
+
+const isReactNative = typeof navigator !== "undefined" && navigator.product === "ReactNative";
+
+const getExpoExtra = () => {
+  if (!isReactNative) {
+    return {} as ExpoExtra;
+  }
+
+  try {
+    const Constants = require("expo-constants").default;
+    return (Constants?.expoConfig?.extra ?? {}) as ExpoExtra;
+  } catch (_error) {
+    return {} as ExpoExtra;
+  }
+};
 
 export type EmailTemplate = "invite" | "transfer_notification" | "transfer_confirmation" | "expiring_reminder" | "claimed_notification";
 
@@ -32,14 +48,18 @@ type ExpoExtra = {
 };
 
 class EmailNotificationService {
-  private readonly extra = (Constants?.expoConfig?.extra ?? {}) as ExpoExtra;
-  private readonly APP_URL = this.extra.appUrl ?? "https://app.metasend.io";
-  private readonly SUPPORT_EMAIL = this.extra.supportEmail ?? "support@metasend.io";
-  private readonly SENDGRID_API_KEY = this.extra.sendgridApiKey ?? "";
-  private readonly RESEND_API_KEY = this.extra.resendApiKey ?? "";
-  private readonly AWS_SES_REGION = this.extra.awsSesRegion ?? "";
-  private readonly AWS_SES_ACCESS_KEY = this.extra.awsSesAccessKey ?? "";
-  private readonly AWS_SES_SECRET_KEY = this.extra.awsSesSecretKey ?? "";
+  private readonly extra = getExpoExtra();
+  private readonly APP_URL = this.extra.appUrl ?? process.env.APP_URL ?? "https://app.metasend.io";
+  private readonly SUPPORT_EMAIL = this.extra.supportEmail ?? process.env.SUPPORT_EMAIL ?? "support@metasend.io";
+  private readonly SENDGRID_API_KEY = this.extra.sendgridApiKey ?? process.env.SENDGRID_API_KEY ?? "";
+  private readonly RESEND_API_KEY = this.extra.resendApiKey ?? process.env.RESEND_API_KEY ?? "";
+  private readonly AWS_SES_REGION = this.extra.awsSesRegion ?? process.env.AWS_SES_REGION ?? "";
+  private readonly AWS_SES_ACCESS_KEY = this.extra.awsSesAccessKey ?? process.env.AWS_SES_ACCESS_KEY ?? "";
+  private readonly AWS_SES_SECRET_KEY = this.extra.awsSesSecretKey ?? process.env.AWS_SES_SECRET_KEY ?? "";
+  private readonly apiBaseUrl = (isReactNative ? this.extra.metasendApiBaseUrl : process.env.METASEND_API_BASE_URL) ||
+    process.env.METASEND_API_BASE_URL ||
+    "https://metasend.vercel.app";
+  private readonly apiKey = (isReactNative ? this.extra.metasendApiKey : process.env.METASEND_API_KEY) || "";
 
   /**
    * Send invite email to non-registered user with pending transfer
@@ -47,6 +67,7 @@ class EmailNotificationService {
   async sendInviteWithPendingTransfer(
     recipientEmail: string,
     senderName: string,
+    senderEmail: string | undefined,
     amount: string,
     token: string,
     transferId: string
@@ -73,12 +94,12 @@ class EmailNotificationService {
             <div class="header">
               <h1>You've Got Money!</h1>
               <div class="amount">${amount} ${token}</div>
-              <p>from ${senderName}</p>
+                <p>from ${senderName}${senderEmail ? ` (${senderEmail})` : ""}</p>
             </div>
 
             <div class="content">
               <h2>Hi there! 👋</h2>
-              <p>${senderName} (${recipientEmail}) sent you <strong>${amount} ${token}</strong> using MetaSend.</p>
+              <p>${senderName}${senderEmail ? ` (${senderEmail})` : ""} sent you <strong>${amount} ${token}</strong> using MetaSend.</p>
               
               <p>Create your free MetaSend wallet to claim your funds:</p>
               
@@ -361,48 +382,42 @@ class EmailNotificationService {
    */
   private async sendEmail(params: { to: string; subject: string; html: string }): Promise<boolean> {
     try {
-      // Call backend API to send email (Resend must be server-side)
-      const apiBaseUrl = this.extra.metasendApiBaseUrl || 'https://metasend.vercel.app';
-      const apiKey = this.extra.metasendApiKey || '';
+      if (!this.apiKey) {
+        console.warn("⚠️ Missing METASEND_API_KEY. Email not sent.");
+        return false;
+      }
       
-      const response = await fetch(`${apiBaseUrl}/api/send-email`, {
+      console.log('📧 Sending email to:', params.to);
+      console.log('🔧 API Base URL:', this.apiBaseUrl);
+      console.log('🔑 API Key (first 10 chars):', this.apiKey.substring(0, 10));
+      
+      const response = await fetch(`${this.apiBaseUrl}/api/send-email`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
+          'Authorization': `Bearer ${this.apiKey}`,
         },
         body: JSON.stringify({
           to: params.to,
           subject: params.subject,
           html: params.html,
-          from: this.SUPPORT_EMAIL,
+          from: `MetaSend <${this.SUPPORT_EMAIL}>`,
         }),
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(`Email API error: ${response.status} - ${errorData.error || response.statusText}`);
+        const errorText = await response.text();
+        console.log('⚠️ Email API returned:', response.status, errorText.substring(0, 100));
+        return false;
       }
 
       const data = await response.json();
       
-      console.log("✅ Email sent successfully:", {
-        to: params.to,
-        subject: params.subject,
-        messageId: data.messageId,
-      });
+      console.log("✅ Email sent successfully to:", params.to);
 
       return true;
     } catch (error) {
-      console.error("❌ Failed to send email:", error);
-      console.log("📧 Email details (not sent):", {
-        to: params.to,
-        subject: params.subject,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
-      
-      // Don't throw - just log the error and return false
-      // This prevents email failures from blocking transfers
+      console.log('⚠️ Email failed:', error instanceof Error ? error.message : 'Unknown error');
       return false;
     }
   }

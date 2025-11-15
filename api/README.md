@@ -28,6 +28,39 @@ Sends transactional emails using Resend.
 }
 ```
 
+### GET/POST /api/transfers
+Persists and queries transfer history records for the mobile app.
+
+**Authentication:** Bearer token (METASEND_API_KEY)
+
+**GET Query Parameters:**
+- `senderWallet` (optional) – filter by the sender's smart account (0x...)
+- `senderUserId` (optional) – filter by Coinbase user id
+- `limit` (optional) – max number of records to return (default 50)
+
+**POST Body:**
+```json
+{
+  "id": "tx_...",
+  "createdAt": "2025-11-14T00:00:00.000Z",
+  "senderWallet": "0xabc...",
+  "intent": {
+    "recipientEmail": "friend@example.com",
+    "amountUsdc": 12.5,
+    "memo": "optional",
+    "senderEmail": "you@example.com",
+    "senderName": "You",
+    "senderUserId": "user_123"
+  },
+  "status": "sent",
+  "txHash": "0x123..."
+}
+```
+
+**Responses:**
+- GET: `{ "success": true, "transfers": [ ... ] }`
+- POST: `{ "success": true, "transfer": { ... } }`
+
 ### POST /api/cron/process-expiry
 Processes expired pending transfers (runs hourly via Vercel Cron).
 

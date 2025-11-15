@@ -21,15 +21,14 @@ export default async function handler(req: any, res: any) {
 
   try {
     console.log("🔄 Processing expired pending transfers...");
-    
-    const expired = await pendingTransferService.processExpiredTransfers();
-    
-    console.log(`✅ Processed ${expired.length} expired transfers`);
-    
+
+    const processed = await pendingTransferService.expirePendingTransfers();
+
+    console.log(`✅ Processed ${processed} expired transfers`);
+
     return res.status(200).json({
       success: true,
-      processed: expired.length,
-      transfers: expired.map((t) => t.transferId),
+      processed,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {

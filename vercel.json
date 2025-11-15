@@ -1,11 +1,6 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "api/**/*.ts",
-      "use": "@vercel/node"
-    }
-  ],
+  "buildCommand": "echo 'No build needed - API only'",
+  "outputDirectory": "api",
   "crons": [
     {
       "path": "/api/cron/process-expiry",

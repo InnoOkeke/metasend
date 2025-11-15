@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, View } from "react-native";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, Alert, View } from "react-native";
 import { DarkTheme, DefaultTheme, NavigationContainer, Theme } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -16,9 +16,7 @@ import { TippingScreen } from "../screens/TippingScreen";
 import { PaymentRequestsScreen } from "../screens/PaymentRequestsScreen";
 import { InvoicesScreen } from "../screens/InvoicesScreen";
 import { GiftsScreen } from "../screens/GiftsScreen";
-
-const RETURNING_USER_KEY = "is_returning_user";
-const BIOMETRIC_AUTH_KEY = "biometric_authenticated";
+import { RETURNING_USER_KEY, BIOMETRIC_AUTH_KEY } from "../constants/auth";
 
 export type RootStackParamList = {
   SignIn: undefined;
@@ -41,9 +39,35 @@ export const RootNavigator: React.FC = () => {
   const [needsBiometric, setNeedsBiometric] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
 
-  useEffect(() => {
-    checkReturningUser();
+  const syncReturningUserFlag = useCallback(async () => {
+    try {
+      const returning = await AsyncStorage.getItem(RETURNING_USER_KEY);
+      setIsReturningUser(returning === "true");
+    } catch (error) {
+      console.error("Error checking returning user:", error);
+      setIsReturningUser(false);
+    }
   }, []);
+
+  useEffect(() => {
+    const initialize = async () => {
+      try {
+        await AsyncStorage.removeItem(BIOMETRIC_AUTH_KEY);
+        await syncReturningUserFlag();
+      } finally {
+        setCheckingAuth(false);
+      }
+    };
+
+    initialize();
+  }, [syncReturningUserFlag]);
+
+  useEffect(() => {
+    if (!isConnected && !loading) {
+      setNeedsBiometric(false);
+      syncReturningUserFlag();
+    }
+  }, [isConnected, loading, syncReturningUserFlag]);
 
   useEffect(() => {
     if (isConnected && !loading && isReturningUser !== null) {
@@ -51,20 +75,6 @@ export const RootNavigator: React.FC = () => {
       checkBiometricStatus();
     }
   }, [isConnected, loading, isReturningUser]);
-
-  const checkReturningUser = async () => {
-    try {
-      // Clear biometric auth on app reload so returning users need to re-authenticate
-      await AsyncStorage.removeItem(BIOMETRIC_AUTH_KEY);
-      const returning = await AsyncStorage.getItem(RETURNING_USER_KEY);
-      setIsReturningUser(returning === "true");
-    } catch (error) {
-      console.error("Error checking returning user:", error);
-      setIsReturningUser(false);
-    } finally {
-      setCheckingAuth(false);
-    }
-  };
 
   const markAsReturningUser = async () => {
     try {
@@ -97,9 +107,21 @@ export const RootNavigator: React.FC = () => {
   };
 
   const handleSignOut = async () => {
-    await AsyncStorage.removeItem(BIOMETRIC_AUTH_KEY);
+    try {
+      await AsyncStorage.multiRemove([BIOMETRIC_AUTH_KEY, RETURNING_USER_KEY]);
+    } catch (error) {
+      console.warn("Failed to clear auth flags on sign out", error);
+    }
+
     setNeedsBiometric(false);
-    disconnect();
+    setIsReturningUser(false);
+
+    try {
+      await disconnect();
+      Alert.alert("Signed out", "You can now sign in with a different account.");
+    } catch (error) {
+      console.warn("Disconnect error", error);
+    }
   };
 
   const baseTheme = scheme === "dark" ? DarkTheme : DefaultTheme;
@@ -134,17 +156,6 @@ export const RootNavigator: React.FC = () => {
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background }}>
         <ActivityIndicator size="large" color={colors.primary} />
       </View>
-    );
-  }
-
-  // Show biometric unlock for returning users (even if not connected yet)
-  if (isReturningUser && !isConnected) {
-    return (
-      <BiometricUnlockScreen
-        onUnlock={handleBiometricUnlock}
-        onSignOut={handleSignOut}
-        userEmail={profile?.email}
-      />
     );
   }
 

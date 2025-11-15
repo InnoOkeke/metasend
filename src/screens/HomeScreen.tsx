@@ -2,18 +2,21 @@ import React, { useCallback, useMemo, useState, useEffect } from "react";
 import { ActivityIndicator, StyleSheet, Text, View, FlatList, ListRenderItemInfo, RefreshControl, Modal, Pressable, TouchableOpacity, ScrollView, Clipboard, Alert } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useFocusEffect } from "@react-navigation/native";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { WebView } from "react-native-webview";
 
 import { PrimaryButton } from "../components/PrimaryButton";
+import { ToastModal } from "../components/ToastModal";
 import { useCoinbase } from "../providers/CoinbaseProvider";
 import { useTheme } from "../providers/ThemeProvider";
 import { listTransfers, TransferRecord } from "../services/transfers";
 import { getUsdcBalance, getUsdcTransactions, type BlockchainTransaction } from "../services/blockchain";
+import { pendingTransferService, type PendingTransferSummary } from "../services/PendingTransferService";
 import { RootStackParamList } from "../navigation/RootNavigator";
 import { spacing, typography } from "../utils/theme";
 import type { ColorPalette } from "../utils/theme";
 import { formatRelativeDate, formatShortAddress } from "../utils/format";
+import { useToast } from "../utils/toast";
 import {
   buildRampUrl,
   getAvailableProviders,
@@ -59,6 +62,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   const [currencySymbol, setCurrencySymbol] = useState<string>('$');
   const [fxRate, setFxRate] = useState<number>(1);
   const { scheme, setScheme } = useTheme();
+  const { toast, showToast, hideToast } = useToast();
 
   // Helper function to get currency from country code
   const fetchFxRate = async (currency: string) => {
@@ -233,6 +237,20 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     enabled: hasBaseWallet,
     refetchInterval: 15000, // Refetch every 15 seconds
   });
+  
+  const {
+    data: pendingTransfers = [],
+    isFetching: loadingPendingTransfers,
+    refetch: refetchPendingTransfers,
+  } = useQuery<PendingTransferSummary[]>({
+    queryKey: ["pendingTransfers", profile?.email],
+    enabled: Boolean(profile?.email),
+    staleTime: 60 * 1000,
+    queryFn: async () => {
+      if (!profile?.email) return [];
+      return pendingTransferService.getPendingTransfers(profile.email);
+    },
+  });
 
   useFocusEffect(
     useCallback(() => {
@@ -336,6 +354,81 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     return [...appActivities, ...blockchainActivities]
       .sort((a, b) => b.timestamp - a.timestamp);
   }, [transfers, blockchainTxs]);
+
+  const claimableTransfers = useMemo<PendingTransferSummary[]>(
+    () => pendingTransfers.filter((transfer) => transfer.status === "pending"),
+    [pendingTransfers]
+  );
+
+  const hasClaimableTransfers = claimableTransfers.length > 0;
+
+  const pendingClaimDescription = useMemo(() => {
+    if (!hasClaimableTransfers) {
+      return "";
+    }
+
+    if (claimableTransfers.length === 1) {
+      const transfer = claimableTransfers[0];
+      const senderName = transfer.senderName || "MetaSend user";
+      return `${transfer.amount} ${transfer.token} from ${senderName}`;
+    }
+
+    return `${claimableTransfers.length} transfers waiting to be claimed`;
+  }, [claimableTransfers, hasClaimableTransfers]);
+
+  const pendingClaimSubtitle = pendingClaimDescription || "You have pending transfers waiting to be claimed.";
+
+  const pendingClaimMutation = useMutation<number, Error, PendingTransferSummary[]>({
+    mutationFn: async (transfersToClaim) => {
+      if (!profile?.userId) {
+        throw new Error("Wallet not ready yet");
+      }
+
+      if (!transfersToClaim.length) {
+        return 0;
+      }
+
+      let claimed = 0;
+      for (const transfer of transfersToClaim) {
+        await pendingTransferService.claimPendingTransfer(transfer.transferId, profile.userId);
+        claimed += 1;
+      }
+
+      return claimed;
+    },
+    onSuccess: async (claimed) => {
+      await Promise.all([
+        refetchPendingTransfers(),
+        refetchBalance(),
+        refetch(),
+        refetchBlockchainTxs(),
+      ]);
+
+      if (claimed > 0) {
+        showToast(`Claimed ${claimed} pending transfer${claimed > 1 ? "s" : ""}`, "success");
+      } else {
+        showToast("No pending transfers to claim", "info");
+      }
+    },
+    onError: (error) => {
+      showToast(error instanceof Error ? error.message : "Failed to claim pending transfers", "error");
+    },
+  });
+
+  const isClaimActionBusy = pendingClaimMutation.isPending || loadingPendingTransfers;
+
+  const handleClaimPendingTransfers = () => {
+    if (isClaimActionBusy) {
+      return;
+    }
+
+    if (!hasClaimableTransfers) {
+      showToast("No pending transfers to claim", "info");
+      return;
+    }
+
+    pendingClaimMutation.mutate(claimableTransfers);
+  };
 
   const renderActivity = ({ item }: ListRenderItemInfo<Activity>) => {
     if (item.type === "app-transfer") {
@@ -444,7 +537,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   };
 
   return (
-    <View style={styles.container}>
+    <>
+      <View style={styles.container}>
       {/* Home Screen */}
       {activeTab === "home" && (
         <>
@@ -481,6 +575,22 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
           </Text>
         </TouchableOpacity>
       </View>
+
+      {hasClaimableTransfers && (
+        <View style={styles.pendingTransfersCard}>
+          <Text style={styles.pendingCardTitle}>Pending USDC available</Text>
+          <Text style={styles.pendingCardSubtitle}>{pendingClaimSubtitle}</Text>
+          <Text style={styles.pendingCardFootnote}>Claim to move funds directly into your MetaSend wallet.</Text>
+          <View style={styles.pendingCardButtonWrapper}>
+            <PrimaryButton
+              title={pendingClaimMutation.isPending ? "Claiming..." : "Claim pending USDC"}
+              onPress={handleClaimPendingTransfers}
+              loading={isClaimActionBusy}
+              disabled={isClaimActionBusy}
+            />
+          </View>
+        </View>
+      )}
 
       <View style={styles.quickActions}>
         <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate("Send")}>
@@ -1249,6 +1359,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         </TouchableOpacity>
       </View>
     </View>
+      <ToastModal
+        visible={toast.visible}
+        message={toast.message}
+        type={toast.type}
+        onDismiss={hideToast}
+      />
+    </>
   );
 };
 
@@ -1272,6 +1389,40 @@ const createStyles = (colors: ColorPalette) =>
       elevation: 8,
       borderWidth: 1,
       borderColor: `${colors.primary}20`,
+    },
+    pendingTransfersCard: {
+      backgroundColor: colors.cardBackground,
+      borderRadius: 24,
+      padding: spacing.lg,
+      marginHorizontal: spacing.lg,
+      marginBottom: spacing.lg,
+      borderWidth: 1,
+      borderColor: `${colors.success}25`,
+      shadowColor: colors.success,
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.08,
+      shadowRadius: 12,
+      elevation: 4,
+      gap: spacing.sm,
+    },
+    pendingCardTitle: {
+      ...typography.subtitle,
+      color: colors.textPrimary,
+      fontSize: 18,
+      fontWeight: "700",
+    },
+    pendingCardSubtitle: {
+      ...typography.body,
+      color: colors.textSecondary,
+      fontSize: 14,
+    },
+    pendingCardFootnote: {
+      ...typography.body,
+      color: colors.textSecondary,
+      fontSize: 12,
+    },
+    pendingCardButtonWrapper: {
+      marginTop: spacing.md,
     },
     profileRow: {
       flexDirection: "row",

@@ -1,33 +1,86 @@
 import { resolveEmailToWallet } from "./addressResolution";
-import { sendEmail } from "./notifications";
+import { emailNotificationService } from "./EmailNotificationService";
 import { getUsdcBalance, encodeUsdcTransfer } from "./blockchain";
-import { BASE_CHAIN_ID, USDC_TOKEN_ADDRESS, USDC_DECIMALS } from "../config/coinbase";
+import { USDC_TOKEN_ADDRESS, USDC_DECIMALS } from "../config/coinbase";
+import { pendingTransferService } from "./PendingTransferService";
+import type { TransferIntent, TransferRecord, TransferResult } from "../types/transfers";
 
-export type TransferIntent = {
-  recipientEmail: string;
-  amountUsdc: number;
-  memo?: string;
+export type { TransferIntent, TransferRecord, TransferResult } from "../types/transfers";
+
+declare const require: any;
+
+type ExpoExtra = {
+  metasendApiBaseUrl?: string;
+  metasendApiKey?: string;
 };
 
-export type TransferResult = {
-  intent: TransferIntent;
-  status: "sent" | "pending_recipient_signup";
-  txHash?: `0x${string}`;
-  redemptionCode?: string;
-  recipientWallet?: string;
+const DEFAULT_TOKEN_SYMBOL = "USDC";
+const BASE_CHAIN_NAME = "Base";
+const isReactNative = typeof navigator !== "undefined" && navigator.product === "ReactNative";
+
+const getExpoExtra = (): ExpoExtra => {
+  if (!isReactNative) {
+    return {};
+  }
+
+  try {
+    const Constants = require("expo-constants").default;
+    return (Constants?.expoConfig?.extra ?? {}) as ExpoExtra;
+  } catch (_error) {
+    return {} as ExpoExtra;
+  }
 };
 
-export type TransferRecord = TransferResult & {
-  id: string;
-  createdAt: string;
-  senderWallet: string;
+const extra = getExpoExtra();
+const apiBaseUrl = (isReactNative ? extra.metasendApiBaseUrl : process.env.METASEND_API_BASE_URL) || "";
+const apiKey = (isReactNative ? extra.metasendApiKey : process.env.METASEND_API_KEY) || "";
+
+const ensureApiConfig = () => {
+  if (!apiBaseUrl || !apiKey) {
+    throw new Error("MetaSend API configuration missing. Set METASEND_API_BASE_URL and METASEND_API_KEY.");
+  }
 };
 
-const transferHistory: TransferRecord[] = [];
+const apiRequest = async <T>(path: string, init?: RequestInit): Promise<T> => {
+  ensureApiConfig();
+
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+      ...(init?.headers || {}),
+    },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(errorText || `Request failed with status ${response.status}`);
+  }
+
+  return (await response.json()) as T;
+};
+
+const persistTransferRecord = async (record: TransferRecord): Promise<void> => {
+  await apiRequest<{ success: boolean }>("/api/transfers", {
+    method: "POST",
+    body: JSON.stringify(record),
+  });
+};
+
+const fetchTransferHistory = async (senderWallet: string): Promise<TransferRecord[]> => {
+  const result = await apiRequest<{ success: boolean; transfers?: TransferRecord[] }>(
+    `/api/transfers?senderWallet=${encodeURIComponent(senderWallet)}`
+  );
+  console.log("📋 Synced", (result.transfers ?? []).length, "transfers for", senderWallet.slice(0, 6));
+  return result.transfers ?? [];
+};
 
 export async function listTransfers(senderWallet: string): Promise<TransferRecord[]> {
-  await delay(200);
-  return transferHistory.filter((record) => record.senderWallet === senderWallet);
+  if (!senderWallet) {
+    return [];
+  }
+  return fetchTransferHistory(senderWallet);
 }
 
 export async function sendUsdcWithPaymaster(
@@ -35,22 +88,35 @@ export async function sendUsdcWithPaymaster(
   intent: TransferIntent,
   sendUserOperationFn: (calls: any[]) => Promise<{ userOperationHash: string }>
 ): Promise<TransferResult> {
-  const { recipientEmail, amountUsdc, memo } = intent;
+  console.log("🚀 Starting transfer:", {
+    from: walletAddress.slice(0, 6),
+    to: intent.recipientEmail,
+    amount: intent.amountUsdc,
+  });
+  
+  const { recipientEmail, amountUsdc } = intent;
 
   if (amountUsdc <= 0) {
     throw new Error("Amount must be greater than zero.");
   }
 
   // Check USDC balance before proceeding
+  console.log("💰 Checking balance for", walletAddress.slice(0, 6));
   const balance = await getUsdcBalance(walletAddress);
+  console.log("💵 Balance:", balance.toFixed(2), "USDC");
+  
   if (balance < amountUsdc) {
     throw new Error(`Insufficient USDC balance. You have ${balance.toFixed(2)} USDC but need ${amountUsdc.toFixed(2)} USDC`);
   }
 
   const senderAddress = assertHexAddress(walletAddress, "Sender wallet");
+  
+  console.log("🔍 Resolving recipient:", recipientEmail);
   const contact = await resolveEmailToWallet({ email: recipientEmail });
+  console.log("✅ Recipient resolved:", { isRegistered: contact.isRegistered, wallet: contact.walletAddress?.slice(0, 6) });
 
   if (!contact.isRegistered || !contact.walletAddress) {
+    console.log("📧 Creating pending transfer (unregistered user)");
     const pendingRecord = await enqueuePendingTransfer(senderAddress, intent);
     return pendingRecord;
   }
@@ -58,9 +124,11 @@ export async function sendUsdcWithPaymaster(
   const recipientAddress = assertHexAddress(contact.walletAddress, "Recipient wallet");
 
   // Encode USDC transfer call
+  console.log("📝 Encoding USDC transfer");
   const transferCallData = encodeUsdcTransfer(recipientAddress, amountUsdc);
 
   // Execute the user operation via CDP
+  console.log("⚡ Executing user operation via CDP...");
   const result = await sendUserOperationFn([
     {
       to: USDC_TOKEN_ADDRESS,
@@ -70,6 +138,7 @@ export async function sendUsdcWithPaymaster(
   ]);
 
   const txHash = result.userOperationHash as `0x${string}`;
+  console.log("✅ Transaction sent! Hash:", txHash);
 
   const record: TransferRecord = {
     id: `tx_${Date.now()}`,
@@ -81,7 +150,50 @@ export async function sendUsdcWithPaymaster(
     recipientWallet: contact.walletAddress,
   };
 
-  transferHistory.unshift(record);
+    await persistTransferRecord(record);
+    console.log("☁️ Transfer record saved to API");
+
+  // Fire-and-forget email notifications for registered recipients
+  const senderName = intent.senderName ?? intent.senderEmail ?? walletAddress.slice(0, 6);
+  const recipientName = contact.displayName ?? intent.recipientEmail;
+  const amountDisplay = intent.amountUsdc.toString();
+
+  const notificationPromises: Promise<boolean>[] = [
+    emailNotificationService.sendTransferNotification(
+      intent.recipientEmail,
+      recipientName,
+      senderName,
+      amountDisplay,
+      DEFAULT_TOKEN_SYMBOL,
+      BASE_CHAIN_NAME
+    ),
+  ];
+
+  if (intent.senderEmail) {
+    notificationPromises.push(
+      emailNotificationService.sendTransferConfirmation(
+        intent.senderEmail,
+        senderName,
+        intent.recipientEmail,
+        amountDisplay,
+        DEFAULT_TOKEN_SYMBOL,
+        "sent"
+      )
+    );
+  }
+
+  Promise.allSettled(notificationPromises)
+    .then((results) => {
+      results.forEach((result, index) => {
+        if (result.status === "fulfilled") {
+          console.log(index === 0 ? "📨 Recipient notified" : "📨 Sender confirmation sent");
+        } else {
+          console.warn("⚠️ Email notification failed:", result.reason);
+        }
+      });
+    })
+    .catch((error) => console.warn("⚠️ Email notification promise rejected:", error));
+  
   return record;
 }
 
@@ -89,34 +201,36 @@ async function enqueuePendingTransfer(
   senderAddress: `0x${string}`,
   intent: TransferIntent
 ): Promise<TransferResult> {
-  const redemptionCode = generateRedemptionCode();
+  if (!intent.senderUserId) {
+    throw new Error("Sender identity required for pending transfers");
+  }
+
+  const transfer = await pendingTransferService.createPendingTransfer({
+    recipientEmail: intent.recipientEmail,
+    senderUserId: intent.senderUserId,
+    amount: intent.amountUsdc.toString(),
+    token: DEFAULT_TOKEN_SYMBOL,
+    tokenAddress: USDC_TOKEN_ADDRESS,
+    chain: "evm",
+    decimals: USDC_DECIMALS,
+    message: intent.memo,
+  });
   const record: TransferRecord = {
     id: `pending_${Date.now()}`,
     createdAt: new Date().toISOString(),
     senderWallet: senderAddress,
     intent,
     status: "pending_recipient_signup",
-    redemptionCode,
+    redemptionCode: transfer.transferId,
+    pendingTransferId: transfer.transferId,
   };
 
-  transferHistory.unshift(record);
-
-  await sendEmail({
-    to: intent.recipientEmail,
-    subject: "You have USDC waiting on MetaSend",
-    body: `You've been sent ${intent.amountUsdc} USDC. Create a MetaSend account to claim it. Redemption code: ${redemptionCode}.`,
-  });
+    await persistTransferRecord(record);
+    console.log("☁️ Pending transfer saved to API");
 
   return record;
 }
 
-const generateRedemptionCode = () =>
-  Math.random()
-    .toString(36)
-    .slice(2, 10)
-    .toUpperCase();
-
-const delay = (ms = 400) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const assertHexAddress = (value: string | undefined | null, label: string): `0x${string}` => {
   if (!value || !value.startsWith("0x")) {

@@ -92,25 +92,44 @@ export const SendScreen: React.FC = () => {
 
   const mutation = useMutation({
     mutationFn: async (intent: TransferIntent) => {
-      if (!profile?.walletAddress) throw new Error("Wallet not connected");
+      console.log("🔵 Mutation started for:", intent);
+      
+      if (!profile?.walletAddress) {
+        console.error("❌ No wallet address");
+        throw new Error("Wallet not connected");
+      }
+      
+      console.log("📍 Wallet address:", profile.walletAddress);
       
       // Create sendUserOperation function for the transfer service
       const sendUserOpFn = async (calls: any[]) => {
-        return await sendUserOperation({
-          evmSmartAccount: profile.walletAddress as `0x${string}`,
-          network: "base-sepolia",
-          calls,
-          useCdpPaymaster: true, // Use Coinbase Paymaster for gasless transactions
-        });
+        console.log("📞 sendUserOpFn called with calls:", calls.length);
+        try {
+          const result = await sendUserOperation({
+            evmSmartAccount: profile.walletAddress as `0x${string}`,
+            network: "base-sepolia",
+            calls,
+            useCdpPaymaster: true, // Use Coinbase Paymaster for gasless transactions
+          });
+          console.log("✅ sendUserOperation result:", result);
+          return result;
+        } catch (error) {
+          console.error("❌ sendUserOperation error:", error);
+          throw error;
+        }
       };
       
-      return sendUsdcWithPaymaster(
+      console.log("🚀 Calling sendUsdcWithPaymaster...");
+      const result = await sendUsdcWithPaymaster(
         profile.walletAddress as `0x${string}`,
         intent,
         sendUserOpFn
       );
+      console.log("✅ Transfer result:", result);
+      return result;
     },
     onSuccess: async (payload) => {
+      console.log("🎉 Mutation success:", payload);
       await queryClient.invalidateQueries({ queryKey: ["transfers", profile?.walletAddress] });
       await queryClient.invalidateQueries({ queryKey: ["usdcBalance", profile?.walletAddress] });
       setResult(payload);
@@ -127,6 +146,7 @@ export const SendScreen: React.FC = () => {
       }
     },
     onError: (error) => {
+      console.error("❌ Mutation error:", error);
       setIsConfirmModalVisible(false);
       setPendingIntent(null);
       setIsAuthenticating(false);
@@ -141,9 +161,10 @@ export const SendScreen: React.FC = () => {
 
   const handleMemoFocus = () => {
     // Scroll to bottom to show send button when memo is focused
+    // Add extra delay and ensure keyboard is accounted for
     setTimeout(() => {
       scrollViewRef.current?.scrollToEnd({ animated: true });
-    }, 100);
+    }, 300);
   };
 
   const handleSubmit = () => {
@@ -190,6 +211,9 @@ export const SendScreen: React.FC = () => {
         recipientEmail: parsed.data.email,
         amountUsdc: parsed.data.amount,
         memo: parsed.data.memo,
+        senderEmail: profile.email ?? undefined,
+        senderName: profile.displayName ?? profile.email ?? undefined,
+        senderUserId: profile.userId,
       };
 
       // Show confirmation modal instead of immediately sending
@@ -296,6 +320,7 @@ export const SendScreen: React.FC = () => {
         contentContainerStyle={styles.container} 
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
+        showsVerticalScrollIndicator={false}
       >
         <View style={styles.card}>
           <Text style={styles.title}>Send USDC via email</Text>
@@ -475,6 +500,7 @@ const createStyles = (colors: ColorPalette) =>
       flex: 1,
       flexGrow: 1,
       padding: spacing.lg,
+      paddingBottom: spacing.xl * 3, // Extra padding to ensure button is visible above keyboard
       backgroundColor: colors.background,
     },
     card: {

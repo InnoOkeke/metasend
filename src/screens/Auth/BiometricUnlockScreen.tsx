@@ -7,8 +7,7 @@ import { PrimaryButton } from "../../components/PrimaryButton";
 import { useTheme } from "../../providers/ThemeProvider";
 import type { ColorPalette } from "../../utils/theme";
 import { spacing, typography } from "../../utils/theme";
-
-const BIOMETRIC_AUTH_KEY = "biometric_authenticated";
+import { BIOMETRIC_AUTH_KEY } from "../../constants/auth";
 
 type BiometricUnlockScreenProps = {
   onUnlock: () => void;

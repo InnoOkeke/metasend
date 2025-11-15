@@ -2,7 +2,7 @@
  * Vercel Cron Function: Send Reminder Emails
  * Runs every 6 hours to send reminder emails for expiring transfers
  * 
- * Vercel Cron: 0 */6 * * * (every 6 hours)
+ * Vercel Cron: 0 *\/6 * * * (every 6 hours)
  */
 
 import { pendingTransferService } from "../../src/services/PendingTransferService";
@@ -21,16 +21,14 @@ export default async function handler(req: any, res: any) {
 
   try {
     console.log("📧 Sending reminder emails for expiring transfers...");
-    
-    // Send reminders for transfers expiring in 24 hours
-    const reminders = await pendingTransferService.sendExpiryReminders(24);
-    
-    console.log(`✅ Sent ${reminders.length} reminder emails`);
-    
+
+    const sentCount = await pendingTransferService.sendExpiryReminders();
+
+    console.log(`✅ Sent ${sentCount} reminder emails`);
+
     return res.status(200).json({
       success: true,
-      sent: reminders.length,
-      transfers: reminders.map((t) => t.transferId),
+      sent: sentCount,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {

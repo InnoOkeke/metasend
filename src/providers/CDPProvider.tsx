@@ -5,11 +5,10 @@ import { Text, View } from "react-native";
 import * as WebBrowser from "expo-web-browser";
 import * as AuthSession from "expo-auth-session";
 
-// Use the hardcoded value as ultimate fallback
+// Load from environment variables only - no hardcoded fallback
 const CDP_PROJECT_ID = 
   Constants.expoConfig?.extra?.cdpProjectId || 
-  Constants.expoConfig?.extra?.coinbaseAppId || 
-  "73c61525-e3c0-4e81-9d91-ae8861f75f8c";
+  Constants.expoConfig?.extra?.coinbaseAppId;
 
 console.log("🔧 CDP Provider Initializing with Project ID:", CDP_PROJECT_ID);
 

@@ -7,7 +7,7 @@ import { useMutation } from "@tanstack/react-query";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { useCoinbase } from "../../providers/CoinbaseProvider";
 import { useTheme } from "../../providers/ThemeProvider";
-import { pendingTransferService } from "../../services/PendingTransferService";
+import { getTransferDetails, claimPendingTransfer, type PendingTransferDetails } from "../../services/api";
 import { PendingTransfer } from "../../types/database";
 import type { ColorPalette } from "../../utils/theme";
 import { spacing, typography } from "../../utils/theme";
@@ -23,7 +23,7 @@ export const ClaimScreen: React.FC = () => {
   const { colors } = useTheme();
   const styles = React.useMemo(() => createStyles(colors), [colors]);
 
-  const [transfer, setTransfer] = useState<PendingTransfer | null>(null);
+  const [transfer, setTransfer] = useState<PendingTransferDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,7 +42,7 @@ export const ClaimScreen: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
-      const details = await pendingTransferService.getTransferDetails(transferId);
+      const details = await getTransferDetails(transferId);
       
       if (!details) {
         setError("Transfer not found");
@@ -67,7 +67,7 @@ export const ClaimScreen: React.FC = () => {
       if (!transferId) {
         throw new Error("No transfer ID");
       }
-      return await pendingTransferService.claimPendingTransfer(transferId, profile.userId);
+      return await claimPendingTransfer(transferId, profile.userId);
     },
     onSuccess: (txHash) => {
       Alert.alert(

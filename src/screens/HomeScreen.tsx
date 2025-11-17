@@ -11,7 +11,7 @@ import { useCoinbase } from "../providers/CoinbaseProvider";
 import { useTheme } from "../providers/ThemeProvider";
 import { listTransfers, TransferRecord } from "../services/transfers";
 import { getUsdcBalance, getUsdcTransactions, type BlockchainTransaction } from "../services/blockchain";
-import { pendingTransferService, type PendingTransferSummary } from "../services/PendingTransferService";
+import { getPendingTransfers, type PendingTransferSummary } from "../services/api";
 import { RootStackParamList } from "../navigation/RootNavigator";
 import { spacing, typography } from "../utils/theme";
 import type { ColorPalette } from "../utils/theme";
@@ -248,7 +248,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     staleTime: 60 * 1000,
     queryFn: async () => {
       if (!profile?.email) return [];
-      return pendingTransferService.getPendingTransfers(profile.email);
+      return getPendingTransfers(profile.email);
     },
   });
 

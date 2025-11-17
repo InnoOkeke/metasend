@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { useIsSignedIn, useSignOut, CDPContext } from "@coinbase/cdp-hooks";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-import { userDirectoryService } from "../services/UserDirectoryService";
+import { registerUser } from "../services/api";
 import { BIOMETRIC_AUTH_KEY, RETURNING_USER_KEY } from "../constants/auth";
 
 export type CoinbaseProfile = {
@@ -70,7 +70,7 @@ export const CoinbaseProvider: React.FC<React.PropsWithChildren> = ({ children }
         setLoading(true);
         setError(null);
 
-        const directoryProfile = await userDirectoryService.registerUser({
+        const directoryProfile = await registerUser({
           userId: currentUser.userId,
           email,
           emailVerified: true,
@@ -82,8 +82,8 @@ export const CoinbaseProvider: React.FC<React.PropsWithChildren> = ({ children }
           userId: directoryProfile.userId,
           email: directoryProfile.email,
           walletAddress: directoryProfile.wallets.evm || walletAddress,
-          displayName: directoryProfile.displayName || displayName,
-          photoUrl: directoryProfile.avatar,
+          displayName: directoryProfile.profile.displayName || displayName,
+          photoUrl: directoryProfile.profile.avatar,
         };
 
         console.log("✅ Directory synced profile:", syncedProfile);

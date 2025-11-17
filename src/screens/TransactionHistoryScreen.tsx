@@ -14,7 +14,7 @@ import { getUsdcTransactions, type BlockchainTransaction } from "../services/blo
 import { getCryptoGifts, type CryptoGift } from "../services/gifts";
 import { getPaymentRequests, type PaymentRequest } from "../services/paymentRequests";
 import { getInvoices, type Invoice } from "../services/invoices";
-import { pendingTransferService } from "../services/PendingTransferService";
+import { cancelPendingTransfer } from "../services/api";
 
 type Props = NativeStackScreenProps<RootStackParamList, "TransactionHistory">;
 
@@ -36,7 +36,7 @@ export const TransactionHistoryScreen: React.FC<Props> = ({ navigation }) => {
   const cancelTransferMutation = useMutation({
     mutationFn: async (transferId: string) => {
       if (!profile?.userId) throw new Error("User not authenticated");
-      return await pendingTransferService.cancelPendingTransfer(transferId, profile.userId);
+      return await cancelPendingTransfer(transferId, profile.userId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["transfers"] });

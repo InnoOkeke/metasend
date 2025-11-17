@@ -258,8 +258,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         refetch();
         refetchBalance();
         refetchBlockchainTxs();
+        refetchPendingTransfers();
       }
-    }, [hasBaseWallet, refetch, refetchBalance, refetchBlockchainTxs])
+    }, [hasBaseWallet, refetch, refetchBalance, refetchBlockchainTxs, refetchPendingTransfers])
   );
 
   // Fetch FX rate when currency changes
@@ -355,80 +356,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
       .sort((a, b) => b.timestamp - a.timestamp);
   }, [transfers, blockchainTxs]);
 
-  const claimableTransfers = useMemo<PendingTransferSummary[]>(
-    () => pendingTransfers.filter((transfer) => transfer.status === "pending"),
-    [pendingTransfers]
-  );
+  // Claimable transfers removed - users claim via web link from email only
 
-  const hasClaimableTransfers = claimableTransfers.length > 0;
 
-  const pendingClaimDescription = useMemo(() => {
-    if (!hasClaimableTransfers) {
-      return "";
-    }
-
-    if (claimableTransfers.length === 1) {
-      const transfer = claimableTransfers[0];
-      const senderName = transfer.senderName || "MetaSend user";
-      return `${transfer.amount} ${transfer.token} from ${senderName}`;
-    }
-
-    return `${claimableTransfers.length} transfers waiting to be claimed`;
-  }, [claimableTransfers, hasClaimableTransfers]);
-
-  const pendingClaimSubtitle = pendingClaimDescription || "You have pending transfers waiting to be claimed.";
-
-  const pendingClaimMutation = useMutation<number, Error, PendingTransferSummary[]>({
-    mutationFn: async (transfersToClaim) => {
-      if (!profile?.userId) {
-        throw new Error("Wallet not ready yet");
-      }
-
-      if (!transfersToClaim.length) {
-        return 0;
-      }
-
-      let claimed = 0;
-      for (const transfer of transfersToClaim) {
-        await pendingTransferService.claimPendingTransfer(transfer.transferId, profile.userId);
-        claimed += 1;
-      }
-
-      return claimed;
-    },
-    onSuccess: async (claimed) => {
-      await Promise.all([
-        refetchPendingTransfers(),
-        refetchBalance(),
-        refetch(),
-        refetchBlockchainTxs(),
-      ]);
-
-      if (claimed > 0) {
-        showToast(`Claimed ${claimed} pending transfer${claimed > 1 ? "s" : ""}`, "success");
-      } else {
-        showToast("No pending transfers to claim", "info");
-      }
-    },
-    onError: (error) => {
-      showToast(error instanceof Error ? error.message : "Failed to claim pending transfers", "error");
-    },
-  });
-
-  const isClaimActionBusy = pendingClaimMutation.isPending || loadingPendingTransfers;
-
-  const handleClaimPendingTransfers = () => {
-    if (isClaimActionBusy) {
-      return;
-    }
-
-    if (!hasClaimableTransfers) {
-      showToast("No pending transfers to claim", "info");
-      return;
-    }
-
-    pendingClaimMutation.mutate(claimableTransfers);
-  };
 
   const renderActivity = ({ item }: ListRenderItemInfo<Activity>) => {
     if (item.type === "app-transfer") {
@@ -576,21 +506,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         </TouchableOpacity>
       </View>
 
-      {hasClaimableTransfers && (
-        <View style={styles.pendingTransfersCard}>
-          <Text style={styles.pendingCardTitle}>Pending USDC available</Text>
-          <Text style={styles.pendingCardSubtitle}>{pendingClaimSubtitle}</Text>
-          <Text style={styles.pendingCardFootnote}>Claim to move funds directly into your MetaSend wallet.</Text>
-          <View style={styles.pendingCardButtonWrapper}>
-            <PrimaryButton
-              title={pendingClaimMutation.isPending ? "Claiming..." : "Claim pending USDC"}
-              onPress={handleClaimPendingTransfers}
-              loading={isClaimActionBusy}
-              disabled={isClaimActionBusy}
-            />
-          </View>
-        </View>
-      )}
+      {/* Claimable transfers removed - users claim via web link from email only */}
 
       <View style={styles.quickActions}>
         <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate("Send")}>
@@ -1390,40 +1306,7 @@ const createStyles = (colors: ColorPalette) =>
       borderWidth: 1,
       borderColor: `${colors.primary}20`,
     },
-    pendingTransfersCard: {
-      backgroundColor: colors.cardBackground,
-      borderRadius: 24,
-      padding: spacing.lg,
-      marginHorizontal: spacing.lg,
-      marginBottom: spacing.lg,
-      borderWidth: 1,
-      borderColor: `${colors.success}25`,
-      shadowColor: colors.success,
-      shadowOffset: { width: 0, height: 6 },
-      shadowOpacity: 0.08,
-      shadowRadius: 12,
-      elevation: 4,
-      gap: spacing.sm,
-    },
-    pendingCardTitle: {
-      ...typography.subtitle,
-      color: colors.textPrimary,
-      fontSize: 18,
-      fontWeight: "700",
-    },
-    pendingCardSubtitle: {
-      ...typography.body,
-      color: colors.textSecondary,
-      fontSize: 14,
-    },
-    pendingCardFootnote: {
-      ...typography.body,
-      color: colors.textSecondary,
-      fontSize: 12,
-    },
-    pendingCardButtonWrapper: {
-      marginTop: spacing.md,
-    },
+    // Removed pendingTransfersCard styles - users claim via web only
     profileRow: {
       flexDirection: "row",
       alignItems: "center",

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useSignInWithEmail, useVerifyEmailOTP, useIsSignedIn, CDPContext } from "@coinbase/cdp-hooks";
 
 import { PrimaryButton } from "../../components/PrimaryButton";
@@ -93,11 +93,19 @@ export const SignInScreen: React.FC = () => {
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>MetaSend</Text>
-      <Text style={styles.subtitle}>Send USDC to any email. Base Sepolia testnet, gasless via Coinbase Paymaster.</Text>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 64 : 0}
+    >
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Text style={styles.title}>MetaSend</Text>
+        <Text style={styles.subtitle}>Send USDC to any email. Base Sepolia testnet, gasless via Coinbase Paymaster.</Text>
 
-      <View style={styles.card}>
+        <View style={styles.card}>
         <Text style={styles.cardTitle}>Get started</Text>
         <Text style={styles.cardBody}>
           Sign in with email to create your embedded smart wallet.
@@ -171,7 +179,8 @@ export const SignInScreen: React.FC = () => {
         
         {error && <Text style={styles.errorText}>{error}</Text>}
       </View>
-    </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 };
 
@@ -179,10 +188,13 @@ const createStyles = (colors: ColorPalette) =>
   StyleSheet.create({
     container: {
       flex: 1,
+      backgroundColor: colors.background,
+    },
+    scrollContent: {
+      flexGrow: 1,
       alignItems: "center",
       justifyContent: "center",
       paddingHorizontal: 24,
-      backgroundColor: colors.background,
       paddingVertical: 32,
     },
     title: {

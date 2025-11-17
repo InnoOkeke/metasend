@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "commonjs",
+    "lib": ["ES2020"],
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "moduleResolution": "node",
+    "allowSyntheticDefaultImports": true,
+    "strict": false,
+    "forceConsistentCasingInFileNames": true,
+    "noImplicitAny": false,
+    "outDir": "./dist"
+  },
+  "include": ["server.ts", "api/**/*", "src/services/**/*", "src/types/**/*"],
+  "exclude": ["node_modules", "dist", "android", "ios"]
+}

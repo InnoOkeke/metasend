@@ -10,9 +10,9 @@
     "build:android": "cd android && .\\gradlew assembleRelease",
     "install:apk": "adb install android/app/build/outputs/apk/release/app-release.apk",
     "backfill": "node scripts/backfill.js",
-    "server:dev": "ts-node server.ts",
+    "server:dev": "ts-node -P tsconfig.server.json server.ts",
     "server:build": "echo 'Build complete'",
-    "server:start": "ts-node server.ts"
+    "server:start": "ts-node -P tsconfig.server.json server.ts"
   },
   "dependencies": {
     "@coinbase/cdp-core": "^0.0.60",

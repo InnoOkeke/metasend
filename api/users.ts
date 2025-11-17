@@ -11,12 +11,42 @@ const authorize = (req: VercelRequest): boolean => {
 const badRequest = (res: VercelResponse, message: string) => res.status(400).json({ success: false, error: message });
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Health check endpoint (no auth required)
+  if (req.method === 'GET' && req.url?.includes('health')) {
+    return res.status(200).json({ 
+      success: true, 
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      mongoConfigured: Boolean(process.env.MONGODB_URI)
+    });
+  }
+
   if (!authorize(req)) {
     return res.status(401).json({ success: false, error: 'Unauthorized' });
   }
 
   try {
-    const db = await getDatabase();
+    console.log('📍 Users API called:', req.method, req.url);
+    
+    // Check if MongoDB is configured
+    if (!process.env.MONGODB_URI) {
+      console.error('❌ MONGODB_URI not configured');
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Database not configured' 
+      });
+    }
+
+    console.log('🔄 Connecting to database...');
+    
+    // Add timeout wrapper for database connection
+    const dbPromise = getDatabase();
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Database connection timeout')), 8000)
+    );
+    
+    const db = await Promise.race([dbPromise, timeoutPromise]) as Awaited<ReturnType<typeof getDatabase>>;
+    console.log('✅ Database connected');
 
     if (req.method === 'GET') {
       const { email, userId, search, limit } = req.query;
@@ -27,7 +57,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       if (email && typeof email === 'string') {
-        const user = await db.getUserByEmail(email);
+        // Normalize email to lowercase for consistent lookups
+        const normalizedEmail = email.toLowerCase().trim();
+        const user = await db.getUserByEmail(normalizedEmail);
         return res.status(200).json({ success: true, user });
       }
 
@@ -50,7 +82,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return badRequest(res, 'userId and email are required');
       }
 
-      const existing = await db.getUserByEmail(email);
+      // Normalize email to lowercase before storing
+      const normalizedEmail = email.toLowerCase().trim();
+      const existing = await db.getUserByEmail(normalizedEmail);
       const now = new Date().toISOString();
 
       if (existing) {
@@ -73,7 +107,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const user: User = {
         userId,
-        email,
+        email: normalizedEmail,
         emailVerified: emailVerified ?? true,
         wallets: {
           evm: walletAddress,

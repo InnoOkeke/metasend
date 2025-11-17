@@ -14,7 +14,7 @@ app.use(cors());
 app.use(express.json());
 
 // Helper to convert Express to Vercel format
-const adaptVercelHandler = (handler: (req: VercelRequest, res: VercelResponse) => Promise<void>) => {
+const adaptVercelHandler = (handler: (req: VercelRequest, res: VercelResponse) => Promise<any>) => {
   return async (req: express.Request, res: express.Response) => {
     const vercelReq = req as unknown as VercelRequest;
     const vercelRes = res as unknown as VercelResponse;

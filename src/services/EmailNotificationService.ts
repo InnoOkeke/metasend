@@ -49,7 +49,7 @@ type ExpoExtra = {
 
 class EmailNotificationService {
   private readonly extra = getExpoExtra();
-  private readonly APP_URL = this.extra.appUrl ?? process.env.APP_URL ?? "https://app.metasend.io";
+  private readonly APP_URL = this.extra.appUrl ?? process.env.APP_URL ?? "https://metasend.vercel.app";
   private readonly SUPPORT_EMAIL = this.extra.supportEmail ?? process.env.SUPPORT_EMAIL ?? "support@metasend.io";
   private readonly SENDGRID_API_KEY = this.extra.sendgridApiKey ?? process.env.SENDGRID_API_KEY ?? "";
   private readonly RESEND_API_KEY = this.extra.resendApiKey ?? process.env.RESEND_API_KEY ?? "";
@@ -420,6 +420,284 @@ class EmailNotificationService {
       console.log('⚠️ Email failed:', error instanceof Error ? error.message : 'Unknown error');
       return false;
     }
+  }
+
+  /**
+   * Send payment request notification
+   */
+  async sendPaymentRequestNotification(
+    payerEmail: string,
+    creatorName: string,
+    amount: string,
+    token: string,
+    description: string,
+    requestId: string
+  ): Promise<boolean> {
+    const subject = `Payment Request: ${amount} ${token} from ${creatorName}`;
+    const paymentLink = `${this.APP_URL}/payment-requests/${requestId}`;
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #1E293B; }
+            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background: linear-gradient(135deg, #3A80F7 0%, #8B5CF6 100%); color: white; padding: 40px 20px; text-align: center; border-radius: 12px; }
+            .amount { font-size: 36px; font-weight: bold; margin: 20px 0; }
+            .content { background: #F8FAFC; padding: 30px; border-radius: 12px; margin: 20px 0; }
+            .button { display: inline-block; background: #3A80F7; color: white; padding: 16px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; margin: 20px 0; }
+            .description { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; }
+            .footer { text-align: center; color: #64748B; font-size: 14px; margin-top: 40px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>💳 Payment Request</h1>
+              <div class="amount">${amount} ${token}</div>
+              <p>from ${creatorName}</p>
+            </div>
+
+            <div class="content">
+              <h2>Hi! 👋</h2>
+              <p>${creatorName} has sent you a payment request.</p>
+
+              <div class="description">
+                <strong>Description:</strong>
+                <p>${description}</p>
+              </div>
+
+              <p>Click the button below to view and pay this request:</p>
+
+              <a href="${paymentLink}" class="button">View Payment Request</a>
+
+              <p><small>Or copy this link: ${paymentLink}</small></p>
+            </div>
+
+            <div class="footer">
+              <p>Powered by MetaSend - Crypto payments made simple</p>
+              <p><a href="${this.APP_URL}">Visit MetaSend</a></p>
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+
+    return await this.sendEmail({ to: payerEmail, subject, html });
+  }
+
+  /**
+   * Send tip notification to creator
+   */
+  async sendTipNotification(
+    creatorEmail: string,
+    tipperName: string,
+    amount: string,
+    token: string,
+    message: string | undefined,
+    jarTitle: string
+  ): Promise<boolean> {
+    const subject = `🎉 You received a ${amount} ${token} tip!`;
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #1E293B; }
+            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background: linear-gradient(135deg, #F59E0B 0%, #EF4444 100%); color: white; padding: 40px 20px; text-align: center; border-radius: 12px; }
+            .amount { font-size: 48px; font-weight: bold; margin: 20px 0; }
+            .content { background: #F8FAFC; padding: 30px; border-radius: 12px; margin: 20px 0; }
+            .message { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #F59E0B; }
+            .button { display: inline-block; background: #F59E0B; color: white; padding: 16px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; margin: 20px 0; }
+            .footer { text-align: center; color: #64748B; font-size: 14px; margin-top: 40px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>🎉 New Tip Received!</h1>
+              <div class="amount">${amount} ${token}</div>
+              <p>from ${tipperName}</p>
+            </div>
+
+            <div class="content">
+              <h2>Congratulations! 🎊</h2>
+              <p>Someone just tipped you ${amount} ${token} on your "${jarTitle}" tip jar!</p>
+
+              ${message ? `
+                <div class="message">
+                  <strong>Message from ${tipperName}:</strong>
+                  <p>"${message}"</p>
+                </div>
+              ` : ""}
+
+              <a href="${this.APP_URL}/tipping" class="button">View All Tips</a>
+            </div>
+
+            <div class="footer">
+              <p>Powered by MetaSend - Crypto payments made simple</p>
+              <p><a href="${this.APP_URL}">Visit MetaSend</a></p>
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+
+    return await this.sendEmail({ to: creatorEmail, subject, html });
+  }
+
+  /**
+   * Send invoice notification to client
+   */
+  async sendInvoiceNotification(
+    clientEmail: string,
+    creatorName: string,
+    invoiceNumber: string,
+    total: string,
+    token: string,
+    dueDate: string,
+    invoiceId: string
+  ): Promise<boolean> {
+    const subject = `Invoice ${invoiceNumber} from ${creatorName}`;
+    const invoiceLink = `${this.APP_URL}/invoices/${invoiceId}`;
+    const formattedDueDate = new Date(dueDate).toLocaleDateString();
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #1E293B; }
+            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background: linear-gradient(135deg, #0F172A 0%, #334155 100%); color: white; padding: 40px 20px; text-align: center; border-radius: 12px; }
+            .invoice-number { font-size: 24px; font-weight: bold; margin: 10px 0; }
+            .amount { font-size: 36px; font-weight: bold; margin: 20px 0; color: #10B981; }
+            .content { background: #F8FAFC; padding: 30px; border-radius: 12px; margin: 20px 0; }
+            .button { display: inline-block; background: #0F172A; color: white; padding: 16px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; margin: 20px 0; }
+            .info-box { background: white; padding: 16px; margin: 20px 0; border-radius: 8px; }
+            .footer { text-align: center; color: #64748B; font-size: 14px; margin-top: 40px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>📄 Invoice</h1>
+              <div class="invoice-number">${invoiceNumber}</div>
+              <div class="amount">${total} ${token}</div>
+              <p>from ${creatorName}</p>
+            </div>
+
+            <div class="content">
+              <h2>Hi! 👋</h2>
+              <p>You have received an invoice from ${creatorName}.</p>
+
+              <div class="info-box">
+                <p><strong>Invoice Number:</strong> ${invoiceNumber}</p>
+                <p><strong>Amount Due:</strong> ${total} ${token}</p>
+                <p><strong>Due Date:</strong> ${formattedDueDate}</p>
+              </div>
+
+              <p>Click the button below to view the full invoice and make payment:</p>
+
+              <a href="${invoiceLink}" class="button">View Invoice</a>
+
+              <p><small>Or copy this link: ${invoiceLink}</small></p>
+            </div>
+
+            <div class="footer">
+              <p>Powered by MetaSend - Crypto payments made simple</p>
+              <p><a href="${this.APP_URL}">Visit MetaSend</a></p>
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+
+    return await this.sendEmail({ to: clientEmail, subject, html });
+  }
+
+  /**
+   * Send crypto gift notification
+   */
+  async sendGiftNotification(
+    recipientEmail: string,
+    senderName: string,
+    amount: string,
+    token: string,
+    theme: string,
+    message: string | undefined,
+    giftId: string
+  ): Promise<boolean> {
+    const themeEmojis: Record<string, string> = {
+      birthday: "🎂",
+      anniversary: "💝",
+      holiday: "🎄",
+      thank_you: "🙏",
+      congratulations: "🎉",
+      red_envelope: "🧧",
+      custom: "🎁",
+    };
+
+    const emoji = themeEmojis[theme] || "🎁";
+    const subject = `${emoji} ${senderName} sent you a crypto gift!`;
+    const giftLink = `${this.APP_URL}/gifts/${giftId}`;
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #1E293B; }
+            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background: linear-gradient(135deg, #EC4899 0%, #8B5CF6 100%); color: white; padding: 40px 20px; text-align: center; border-radius: 12px; }
+            .emoji { font-size: 64px; margin: 20px 0; }
+            .amount { font-size: 48px; font-weight: bold; margin: 20px 0; }
+            .content { background: #F8FAFC; padding: 30px; border-radius: 12px; margin: 20px 0; }
+            .message { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #EC4899; font-style: italic; }
+            .button { display: inline-block; background: linear-gradient(135deg, #EC4899 0%, #8B5CF6 100%); color: white; padding: 16px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; margin: 20px 0; }
+            .footer { text-align: center; color: #64748B; font-size: 14px; margin-top: 40px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <div class="emoji">${emoji}</div>
+              <h1>You've Received a Gift!</h1>
+              <div class="amount">${amount} ${token}</div>
+              <p>from ${senderName}</p>
+            </div>
+
+            <div class="content">
+              <h2>Hi there! 🎊</h2>
+              <p>${senderName} has sent you a special crypto gift!</p>
+
+              ${message ? `
+                <div class="message">
+                  "${message}"
+                  <p style="text-align: right; margin-top: 10px;"><strong>— ${senderName}</strong></p>
+                </div>
+              ` : ""}
+
+              <p>Click the button below to claim your gift:</p>
+
+              <a href="${giftLink}" class="button">Claim Your Gift ${emoji}</a>
+
+              <p><small>Or copy this link: ${giftLink}</small></p>
+            </div>
+
+            <div class="footer">
+              <p>Powered by MetaSend - Crypto payments made simple</p>
+              <p><a href="${this.APP_URL}">Visit MetaSend</a></p>
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+
+    return await this.sendEmail({ to: recipientEmail, subject, html });
   }
 }
 

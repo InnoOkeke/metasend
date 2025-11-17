@@ -100,7 +100,7 @@ Choose one email provider and set its API key:
 
 | Variable | Description |
 | --- | --- |
-| `APP_URL` | Production app URL (default: `https://app.metasend.io`) |
+| `APP_URL` | Production app URL (default: `https://metasend.vercel.app`) |
 | `SUPPORT_EMAIL` | Support email address (default: `support@metasend.io`) |
 
 ### Escrow & Security

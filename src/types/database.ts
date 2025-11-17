@@ -75,3 +75,175 @@ export type TransferNotification = {
   read: boolean;
   createdAt: string;
 };
+
+export type PaymentRequestStatus = "pending" | "paid" | "cancelled" | "expired";
+
+export type PaymentRequest = {
+  requestId: string;
+  creatorUserId: string;
+  creatorEmail: string;
+  creatorName?: string;
+  
+  // Request details
+  amount: string;
+  token: string;
+  chain: ChainType;
+  description: string;
+  
+  // Payer info
+  payerEmail?: string;
+  payerUserId?: string;
+  payerName?: string;
+  
+  // Status
+  status: PaymentRequestStatus;
+  
+  // Payment info
+  paidAt?: string;
+  transactionHash?: string;
+  
+  // Metadata
+  createdAt: string;
+  expiresAt?: string;
+  metadata?: Record<string, any>;
+};
+
+export type TipJarStatus = "active" | "paused" | "closed";
+
+export type TipJar = {
+  jarId: string;
+  creatorUserId: string;
+  creatorEmail: string;
+  creatorName?: string;
+  creatorAvatar?: string;
+  
+  // Jar details
+  title: string;
+  description?: string;
+  suggestedAmounts: number[]; // e.g., [1, 5, 10, 25]
+  acceptedTokens: { token: string; chain: ChainType }[];
+  
+  // Status
+  status: TipJarStatus;
+  totalTipsReceived: number;
+  tipCount: number;
+  
+  // Metadata
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type Tip = {
+  tipId: string;
+  jarId: string;
+  
+  // Tipper info
+  tipperUserId?: string;
+  tipperEmail?: string;
+  tipperName?: string;
+  isAnonymous: boolean;
+  
+  // Tip details
+  amount: string;
+  token: string;
+  chain: ChainType;
+  message?: string;
+  
+  // Transaction
+  transactionHash: string;
+  
+  // Metadata
+  createdAt: string;
+};
+
+export type InvoiceStatus = "draft" | "sent" | "paid" | "overdue" | "cancelled";
+
+export type InvoiceItem = {
+  description: string;
+  quantity: number;
+  unitPrice: string;
+  amount: string;
+};
+
+export type Invoice = {
+  invoiceId: string;
+  invoiceNumber: string;
+  
+  // Creator (merchant)
+  creatorUserId: string;
+  creatorEmail: string;
+  creatorName?: string;
+  creatorAddress?: string;
+  
+  // Client
+  clientEmail: string;
+  clientUserId?: string;
+  clientName?: string;
+  clientAddress?: string;
+  
+  // Invoice details
+  items: InvoiceItem[];
+  subtotal: string;
+  tax?: string;
+  taxRate?: string;
+  total: string;
+  token: string;
+  chain: ChainType;
+  
+  // Status
+  status: InvoiceStatus;
+  
+  // Dates
+  issueDate: string;
+  dueDate: string;
+  paidAt?: string;
+  
+  // Payment
+  transactionHash?: string;
+  
+  // Metadata
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type GiftTheme = "birthday" | "anniversary" | "holiday" | "thank_you" | "congratulations" | "red_envelope" | "custom";
+export type GiftStatus = "pending" | "claimed" | "expired" | "cancelled";
+
+export type CryptoGift = {
+  giftId: string;
+  
+  // Sender
+  senderUserId: string;
+  senderEmail: string;
+  senderName?: string;
+  
+  // Recipient
+  recipientEmail: string;
+  recipientUserId?: string;
+  recipientName?: string;
+  
+  // Gift details
+  amount: string;
+  token: string;
+  chain: ChainType;
+  theme: GiftTheme;
+  message?: string;
+  
+  // Escrow (for unclaimed gifts)
+  escrowAddress?: string;
+  escrowPrivateKeyEncrypted?: string;
+  
+  // Status
+  status: GiftStatus;
+  
+  // Transaction
+  transactionHash?: string;
+  claimTransactionHash?: string;
+  
+  // Dates
+  createdAt: string;
+  expiresAt?: string;
+  claimedAt?: string;
+};
+

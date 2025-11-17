@@ -75,21 +75,36 @@ class UserDirectoryService {
       throw new Error("MetaSend API base URL is not configured");
     }
 
-    const response = await fetch(`${this.apiBaseUrl}${path}`, {
-      ...init,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.apiKey}`,
-        ...(init?.headers || {}),
-      },
-    });
+    // Add timeout to prevent hanging requests
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(errorText || `Request failed with status ${response.status}`);
+    try {
+      const response = await fetch(`${this.apiBaseUrl}${path}`, {
+        ...init,
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.apiKey}`,
+          ...(init?.headers || {}),
+        },
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || `Request failed with status ${response.status}`);
+      }
+
+      return (await response.json()) as T;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error('Request timeout - server took too long to respond');
+      }
+      throw error;
     }
-
-    return (await response.json()) as T;
   }
 
   private async getRemoteUserByEmail(email: string): Promise<User | null> {
@@ -132,9 +147,11 @@ class UserDirectoryService {
    * Find a user by their email address
    */
   async findUserByEmail(email: string): Promise<UserProfile | null> {
+    // Always normalize email to lowercase and trim whitespace
+    const normalizedEmail = email.toLowerCase().trim();
     const user = this.useRemoteApi
-      ? await this.getRemoteUserByEmail(email)
-      : await db.getUserByEmail(email);
+      ? await this.getRemoteUserByEmail(normalizedEmail)
+      : await db.getUserByEmail(normalizedEmail);
     if (!user) return null;
 
     return this.mapUserToProfile(user);
@@ -216,25 +233,50 @@ class UserDirectoryService {
     displayName?: string;
     avatar?: string;
   }): Promise<UserProfile> {
+    // Normalize email to lowercase before registration
+    const normalizedEmail = data.email.toLowerCase().trim();
+    
     if (this.useRemoteApi) {
-      const response = await this.request<{ success: boolean; user: User }>("/api/users", {
-        method: "POST",
-        body: JSON.stringify({
-          userId: data.userId,
-          email: data.email,
-          emailVerified: data.emailVerified,
-          walletAddress: data.walletAddress,
-          displayName: data.displayName,
-          avatar: data.avatar,
-        }),
-      });
+      try {
+        const response = await this.request<{ success: boolean; user: User }>("/api/users", {
+          method: "POST",
+          body: JSON.stringify({
+            userId: data.userId,
+            email: normalizedEmail,
+            emailVerified: data.emailVerified,
+            walletAddress: data.walletAddress,
+            displayName: data.displayName,
+            avatar: data.avatar,
+          }),
+        });
 
-      return this.mapUserToProfile(response.user);
+        return this.mapUserToProfile(response.user);
+      } catch (error) {
+        console.error("❌ Remote registration failed, falling back to local:", error);
+        // Fallback to local registration if remote fails
+        const user: User = {
+          userId: data.userId,
+          email: normalizedEmail,
+          emailVerified: data.emailVerified,
+          wallets: {
+            evm: data.walletAddress,
+          },
+          profile: {
+            displayName: data.displayName,
+            avatar: data.avatar,
+          },
+          createdAt: new Date().toISOString(),
+          lastLoginAt: new Date().toISOString(),
+        };
+
+        // Store locally in memory for this session
+        return this.mapUserToProfile(user);
+      }
     }
 
     const user: User = {
       userId: data.userId,
-      email: data.email,
+      email: normalizedEmail,
       emailVerified: data.emailVerified,
       wallets: {
         evm: data.walletAddress,

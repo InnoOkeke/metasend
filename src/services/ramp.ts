@@ -43,6 +43,7 @@ export type RampConfig = {
   paymentMethod?: PaymentMethod;
   destinationCurrency?: string;
   destinationNetwork?: string;
+  sessionToken?: string; // Required for secure Coinbase projects
 };
 
 /**
@@ -183,23 +184,27 @@ export function getPaymentMethodDescription(method: PaymentMethod): string {
 /**
  * Build Coinbase Onramp URL
  * Docs: https://docs.cdp.coinbase.com/onramp-&-offramp/docs/api-configurations
+ * Updated to use new API parameters (addresses, assets) and sessionToken
  */
 export function buildCoinbaseRampUrl(config: RampConfig): string {
   const baseUrl = config.type === "onramp" 
     ? "https://pay.coinbase.com/buy/select-asset"
     : "https://pay.coinbase.com/sell/select-asset";
   
+  // New API format: Use addresses and assets instead of destinationWallets
   const params = new URLSearchParams({
     appId: COINBASE_APP_ID,
-    destinationWallets: JSON.stringify([{
-      address: config.walletAddress,
-      blockchains: [config.destinationNetwork ?? "base"],
-      assets: [config.assetSymbol ?? "USDC"],
-    }]),
+    addresses: JSON.stringify({ [config.walletAddress]: [config.destinationNetwork ?? "base"] }),
+    assets: JSON.stringify([config.assetSymbol ?? "USDC"]),
   });
   
-  if (config.assetSymbol) {
-    params.append("presetCryptoAmount", config.amount ?? "");
+  // Add sessionToken if provided (required for secure projects)
+  if (config.sessionToken) {
+    params.append("sessionToken", config.sessionToken);
+  }
+  
+  if (config.amount) {
+    params.append("presetCryptoAmount", config.amount);
   }
   
   if (config.paymentMethod) {
@@ -259,7 +264,57 @@ export function buildPaycrestUrl(config: RampConfig): string {
 }
 
 /**
- * Build ramp URL for any provider
+ * Fetch session token from backend for secure Coinbase projects
+ */
+export async function getCoinbaseSessionToken(walletAddress: string): Promise<string | null> {
+  try {
+    const apiKey = Constants.expoConfig?.extra?.metasendApiKey;
+    const apiBaseUrl = Constants.expoConfig?.extra?.metasendApiBaseUrl;
+    
+    if (!apiKey || !apiBaseUrl) {
+      console.warn("API configuration missing, skipping session token");
+      return null;
+    }
+    
+    const response = await fetch(`${apiBaseUrl}/api/coinbase-session`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({ walletAddress }),
+    });
+    
+    if (!response.ok) {
+      console.warn("Failed to get session token:", response.statusText);
+      return null;
+    }
+    
+    const data = await response.json();
+    return data.sessionToken;
+  } catch (error) {
+    console.error("Error fetching session token:", error);
+    return null;
+  }
+}
+
+/**
+ * Build ramp URL for any provider with automatic session token for Coinbase
+ */
+export async function buildRampUrlWithSession(config: RampConfig): Promise<string> {
+  if (config.provider === "coinbase" && !config.sessionToken) {
+    // Try to get session token for Coinbase
+    const sessionToken = await getCoinbaseSessionToken(config.walletAddress);
+    if (sessionToken) {
+      config.sessionToken = sessionToken;
+    }
+  }
+  
+  return buildRampUrl(config);
+}
+
+/**
+ * Build ramp URL for any provider (synchronous version)
  */
 export function buildRampUrl(config: RampConfig): string {
   switch (config.provider) {

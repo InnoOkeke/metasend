@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useRef } from "react";
-import { Keyboard, ScrollView, StyleSheet, Text, View, Modal, Pressable, TouchableOpacity, ActivityIndicator, Alert } from "react-native";
+import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View, Modal, Pressable, TouchableOpacity, ActivityIndicator, Alert } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { useSendUserOperation } from "@coinbase/cdp-hooks";
@@ -59,35 +59,36 @@ export const SendScreen: React.FC = () => {
 
   if (!profile) {
     return (
-      <View style={styles.container}>
+      <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <View style={styles.card}>
           <Text style={styles.title}>Wallet not connected</Text>
           <Text style={styles.subtitle}>Please sign in with your Coinbase Smart Wallet to send USDC.</Text>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     );
   }
 
   if (!profile.walletAddress || !profile.walletAddress.startsWith("0x")) {
     return (
-      <View style={styles.container}>
+      <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <View style={styles.card}>
           <Text style={styles.title}>Base wallet not ready</Text>
           <Text style={styles.subtitle}>
             Your Coinbase Smart Wallet is being created. Please wait a moment and try again.
           </Text>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     );
   }
 
   const emailIsValid = useMemo(() => z.string().email().safeParse(form.email).success, [form.email]);
 
   const { data: emailLookup, isFetching: resolvingEmail } = useQuery({
-    queryKey: ["emailLookup", form.email.toLowerCase()],
-    queryFn: () => resolveEmailToWallet({ email: form.email.toLowerCase() }),
+    queryKey: ["emailLookup", form.email.toLowerCase().trim()],
+    queryFn: () => resolveEmailToWallet({ email: form.email.toLowerCase().trim() }),
     enabled: emailIsValid,
-    staleTime: 1000 * 30,
+    staleTime: 1000 * 5, // Reduced from 30s to 5s to pick up newly registered users faster
+    retry: 1, // Retry once if lookup fails
   });
 
   const mutation = useMutation({
@@ -161,10 +162,9 @@ export const SendScreen: React.FC = () => {
 
   const handleMemoFocus = () => {
     // Scroll to bottom to show send button when memo is focused
-    // Add extra delay and ensure keyboard is accounted for
     setTimeout(() => {
       scrollViewRef.current?.scrollToEnd({ animated: true });
-    }, 300);
+    }, 100);
   };
 
   const handleSubmit = () => {
@@ -315,14 +315,18 @@ export const SendScreen: React.FC = () => {
 
   return (
     <>
-      <ScrollView 
-        ref={scrollViewRef}
-        contentContainerStyle={styles.container} 
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
-        showsVerticalScrollIndicator={false}
+      <KeyboardAvoidingView 
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
       >
-        <View style={styles.card}>
+        <ScrollView 
+          ref={scrollViewRef}
+          contentContainerStyle={styles.container} 
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.card}>
           <Text style={styles.title}>Send USDC via email</Text>
           <Text style={styles.subtitle}>
             MetaSend resolves the recipient's wallet automatically. If they do not have an account yet, we
@@ -389,6 +393,7 @@ export const SendScreen: React.FC = () => {
           {sendError ? <Text style={styles.error}>{sendError.message}</Text> : null}
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* Confirmation Modal */}
       <Modal
@@ -497,10 +502,9 @@ export const SendScreen: React.FC = () => {
 const createStyles = (colors: ColorPalette) =>
   StyleSheet.create({
     container: {
-      flex: 1,
       flexGrow: 1,
       padding: spacing.lg,
-      paddingBottom: spacing.xl * 3, // Extra padding to ensure button is visible above keyboard
+      paddingBottom: spacing.xl * 4, // Extra padding to ensure button is visible above keyboard
       backgroundColor: colors.background,
     },
     card: {

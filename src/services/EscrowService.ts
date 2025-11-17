@@ -4,6 +4,10 @@
  */
 
 import { ChainType } from "../types/database";
+import { createWalletClient, createPublicClient, http, parseUnits, formatUnits } from "viem";
+import { baseSepolia } from "viem/chains";
+import { privateKeyToAccount } from "viem/accounts";
+import { BASE_RPC_URL, USDC_TOKEN_ADDRESS, USDC_DECIMALS } from "../config/coinbase";
 
 declare const require: any;
 
@@ -38,6 +42,7 @@ type ExpoExtra = {
 
 class EscrowService {
   private readonly ENCRYPTION_KEY_STORAGE = "metasend.escrow.master.key";
+  private readonly IS_MOCK_MODE = false; // Real blockchain transfers enabled!
   private readonly extra = (() => {
     if (!isReactNative) {
       return {} as ExpoExtra;
@@ -55,51 +60,59 @@ class EscrowService {
    * Generate a new escrow wallet for holding pending transfer funds
    */
   async generateEscrowWallet(chain: ChainType): Promise<EscrowWallet> {
-    // In production, use proper wallet generation libraries:
-    // - ethers.js Wallet.createRandom() for EVM
-    // - @solana/web3.js Keypair.generate() for Solana
-    // - TronWeb for Tron
+    console.log(`[EscrowService] Generating new escrow wallet for chain: ${chain}`);
 
-    await this.delay(300);
+    if (chain === "evm") {
+      // Generate random private key (32 bytes)
+      const randomBytes = new Uint8Array(32);
+      if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+        crypto.getRandomValues(randomBytes);
+      } else {
+        // Fallback for environments without crypto.getRandomValues
+        for (let i = 0; i < 32; i++) {
+          randomBytes[i] = Math.floor(Math.random() * 256);
+        }
+      }
+      
+      const privateKey = `0x${Array.from(randomBytes).map(b => b.toString(16).padStart(2, '0')).join('')}` as `0x${string}`;
+      const account = privateKeyToAccount(privateKey);
+      const address = account.address;
 
-    const randomId = Math.random().toString(36).substring(7);
-    let address: string;
+      console.log(`[EscrowService] Generated EVM wallet: ${address}`);
 
-    switch (chain) {
-      case "evm":
-        address = `0x${randomId.padEnd(40, "0")}`;
-        break;
-      case "solana":
-        address = `${randomId.padEnd(44, "0")}`;
-        break;
-      case "tron":
-        address = `T${randomId.padEnd(33, "0")}`;
-        break;
+      const encrypted = await this.encryptPrivateKey(privateKey);
+
+      return {
+        address,
+        privateKeyEncrypted: encrypted,
+        chain,
+      };
     }
 
-    const mockPrivateKey = `pk_${randomId}_${Date.now()}`;
-    const encrypted = await this.encryptPrivateKey(mockPrivateKey);
-
-    return {
-      address,
-      privateKeyEncrypted: encrypted,
-      chain,
-    };
+    // TODO: Implement Solana and Tron wallet generation
+    throw new Error(`Chain ${chain} not yet implemented for real transfers`);
   }
 
   /**
    * Transfer funds from sender to escrow wallet
+   * NOTE: This requires the sender to approve and sign the transaction from their wallet
+   * In a real implementation, this would be called from the frontend after user approval
    */
   async depositToEscrow(params: EscrowTransferParams): Promise<string> {
-    // In production: Execute actual blockchain transaction
-    // - For EVM: Use ethers.js or viem to send transaction
-    // - For Solana: Use @solana/web3.js
-    // - For Tron: Use TronWeb
+    console.log(`[EscrowService] Depositing to escrow:`, params);
 
-    await this.delay(800);
+    if (params.chain === "evm") {
+      // For now, return a placeholder since the actual deposit happens
+      // when the user signs the transaction in their wallet (Coinbase Smart Wallet)
+      // The frontend handles the actual transfer through CDP SDK
+      console.log(`[EscrowService] ⚠️ Deposit should be handled by sender's wallet in frontend`);
+      console.log(`[EscrowService] Sender needs to transfer ${params.amount} USDC to escrow`);
+      
+      // Return a mock hash - in production, this would be the actual tx hash from the wallet
+      return `0xDEPOSIT_${Date.now()}_PENDING`;
+    }
 
-    const txHash = `0x${Math.random().toString(36).substring(2).padEnd(64, "0")}`;
-    return txHash;
+    throw new Error(`Chain ${params.chain} not yet implemented for deposits`);
   }
 
   /**
@@ -113,25 +126,84 @@ class EscrowService {
     tokenAddress: string,
     chain: ChainType
   ): Promise<string> {
-    // In production:
-    // 1. Decrypt private key
-    // 2. Create transaction from escrow to recipient
-    // 3. Sign with escrow private key
-    // 4. Broadcast transaction
-
-    await this.delay(1000);
-
-    const privateKey = await this.decryptPrivateKey(privateKeyEncrypted);
-    console.log("Transferring from escrow:", {
+    console.log("[EscrowService] transferFromEscrow called:", {
       from: escrowAddress,
       to: recipientAddress,
       amount,
       token: tokenAddress,
       chain,
+      mockMode: this.IS_MOCK_MODE,
     });
 
-    const txHash = `0x${Math.random().toString(36).substring(2).padEnd(64, "0")}`;
-    return txHash;
+    if (this.IS_MOCK_MODE) {
+      console.warn("⚠️ [EscrowService] Running in MOCK MODE - No real blockchain transfer occurring!");
+      await this.delay(1000);
+      const txHash = `0xMOCK${Math.random().toString(36).substring(2).padEnd(60, "0")}`;
+      console.log("[EscrowService] Mock transfer completed:", txHash);
+      return txHash;
+    }
+
+    if (chain === "evm") {
+      console.log("[EscrowService] 🚀 Executing REAL blockchain transfer on Base Sepolia");
+
+      // 1. Decrypt private key
+      const privateKey = await this.decryptPrivateKey(privateKeyEncrypted) as `0x${string}`;
+      const account = privateKeyToAccount(privateKey);
+
+      // 2. Create clients
+      const publicClient = createPublicClient({
+        chain: baseSepolia,
+        transport: http(BASE_RPC_URL),
+      });
+
+      const walletClient = createWalletClient({
+        account,
+        chain: baseSepolia,
+        transport: http(BASE_RPC_URL),
+      });
+
+      // 3. Convert amount to proper units (USDC has 6 decimals)
+      const amountInUnits = parseUnits(amount, USDC_DECIMALS);
+      console.log(`[EscrowService] Transferring ${amount} USDC (${amountInUnits} units)`);
+
+      // 4. ERC-20 Transfer ABI
+      const transferAbi = [
+        {
+          name: 'transfer',
+          type: 'function',
+          stateMutability: 'nonpayable',
+          inputs: [
+            { name: 'to', type: 'address' },
+            { name: 'amount', type: 'uint256' }
+          ],
+          outputs: [{ type: 'bool' }]
+        }
+      ] as const;
+
+      // 5. Send transaction
+      const txHash = await walletClient.writeContract({
+        address: tokenAddress as `0x${string}`,
+        abi: transferAbi,
+        functionName: 'transfer',
+        args: [recipientAddress as `0x${string}`, amountInUnits],
+      });
+
+      console.log(`[EscrowService] ✅ Transaction sent: ${txHash}`);
+
+      // 6. Wait for confirmation
+      console.log(`[EscrowService] ⏳ Waiting for transaction confirmation...`);
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+      
+      if (receipt.status === 'success') {
+        console.log(`[EscrowService] ✅ Transaction confirmed in block ${receipt.blockNumber}`);
+      } else {
+        throw new Error(`Transaction failed: ${txHash}`);
+      }
+
+      return txHash;
+    }
+
+    throw new Error(`Chain ${chain} not yet implemented for real transfers`);
   }
 
   /**
@@ -145,11 +217,7 @@ class EscrowService {
     tokenAddress: string,
     chain: ChainType
   ): Promise<string> {
-    // Same as transferFromEscrow but to sender
-    await this.delay(1000);
-
-    const privateKey = await this.decryptPrivateKey(privateKeyEncrypted);
-    console.log("Returning from escrow to sender:", {
+    console.log("[EscrowService] Returning from escrow to sender:", {
       from: escrowAddress,
       to: senderAddress,
       amount,
@@ -157,17 +225,53 @@ class EscrowService {
       chain,
     });
 
-    const txHash = `0x${Math.random().toString(36).substring(2).padEnd(64, "0")}`;
-    return txHash;
+    // Use the same logic as transferFromEscrow, just to a different recipient
+    return this.transferFromEscrow(
+      escrowAddress,
+      privateKeyEncrypted,
+      senderAddress,
+      amount,
+      tokenAddress,
+      chain
+    );
   }
 
   /**
    * Check balance of escrow wallet
    */
   async getEscrowBalance(escrowAddress: string, tokenAddress: string, chain: ChainType): Promise<string> {
-    // In production: Query blockchain for token balance
-    await this.delay(200);
-    return "0"; // Mock implementation
+    if (this.IS_MOCK_MODE) {
+      await this.delay(200);
+      return "0";
+    }
+
+    if (chain === "evm") {
+      const publicClient = createPublicClient({
+        chain: baseSepolia,
+        transport: http(BASE_RPC_URL),
+      });
+
+      const balanceOfAbi = [
+        {
+          name: 'balanceOf',
+          type: 'function',
+          stateMutability: 'view',
+          inputs: [{ name: 'account', type: 'address' }],
+          outputs: [{ type: 'uint256' }]
+        }
+      ] as const;
+
+      const balance = await publicClient.readContract({
+        address: tokenAddress as `0x${string}`,
+        abi: balanceOfAbi,
+        functionName: 'balanceOf',
+        args: [escrowAddress as `0x${string}`],
+      });
+
+      return formatUnits(balance, USDC_DECIMALS);
+    }
+
+    return "0";
   }
 
   /**

@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ScrollView } from "react-native";
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ScrollView, Alert } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { useCoinbase } from "../providers/CoinbaseProvider";
 import { useTheme } from "../providers/ThemeProvider";
@@ -14,6 +14,7 @@ import { getUsdcTransactions, type BlockchainTransaction } from "../services/blo
 import { getCryptoGifts, type CryptoGift } from "../services/gifts";
 import { getPaymentRequests, type PaymentRequest } from "../services/paymentRequests";
 import { getInvoices, type Invoice } from "../services/invoices";
+import { pendingTransferService } from "../services/PendingTransferService";
 
 type Props = NativeStackScreenProps<RootStackParamList, "TransactionHistory">;
 
@@ -30,6 +31,36 @@ export const TransactionHistoryScreen: React.FC<Props> = ({ navigation }) => {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [activeTab, setActiveTab] = useState<TabType>("all");
+  const queryClient = useQueryClient();
+
+  const cancelTransferMutation = useMutation({
+    mutationFn: async (transferId: string) => {
+      if (!profile?.userId) throw new Error("User not authenticated");
+      return await pendingTransferService.cancelPendingTransfer(transferId, profile.userId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["transfers"] });
+      Alert.alert("Success", "Transfer cancelled and funds refunded");
+    },
+    onError: (error) => {
+      Alert.alert("Error", error instanceof Error ? error.message : "Failed to cancel transfer");
+    },
+  });
+
+  const handleCancelTransfer = (transferId: string) => {
+    Alert.alert(
+      "Cancel Transfer?",
+      "This will refund the USDC to your wallet. The recipient won't be able to claim it.",
+      [
+        { text: "Keep Transfer", style: "cancel" },
+        { 
+          text: "Cancel Transfer", 
+          style: "destructive",
+          onPress: () => cancelTransferMutation.mutate(transferId)
+        },
+      ]
+    );
+  };
 
   const { data: transfers } = useQuery({
     queryKey: ["transfers", profile?.walletAddress],
@@ -151,6 +182,7 @@ export const TransactionHistoryScreen: React.FC<Props> = ({ navigation }) => {
   const renderActivity = ({ item }: { item: ActivityItem }) => {
     if (item.type === "transfer") {
       const transfer = item.data as TransferRecord;
+      const isPending = transfer.status === "pending_recipient_signup";
       return (
         <View style={styles.activityCard}>
           <View style={styles.activityIcon}>
@@ -161,6 +193,17 @@ export const TransactionHistoryScreen: React.FC<Props> = ({ navigation }) => {
             <Text style={styles.activitySubtitle}>
               {transfer.status === "sent" ? "Completed" : "Pending"} · {formatRelativeDate(transfer.createdAt)}
             </Text>
+            {isPending && transfer.pendingTransferId && (
+              <TouchableOpacity 
+                style={styles.cancelButton}
+                onPress={() => handleCancelTransfer(transfer.pendingTransferId!)}
+                disabled={cancelTransferMutation.isPending}
+              >
+                <Text style={styles.cancelButtonText}>
+                  {cancelTransferMutation.isPending ? "Cancelling..." : "Cancel Transfer"}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
           <Text style={styles.activityAmount}>{transfer.intent.amountUsdc.toFixed(2)} USDC</Text>
         </View>
@@ -404,6 +447,19 @@ const createStyles = (colors: ColorPalette) =>
     },
     activityAmountPositive: {
       color: "#10B981",
+    },
+    cancelButton: {
+      marginTop: spacing.sm,
+      paddingVertical: spacing.xs,
+      paddingHorizontal: spacing.sm,
+      backgroundColor: colors.error + "20",
+      borderRadius: 6,
+      alignSelf: "flex-start",
+    },
+    cancelButtonText: {
+      fontSize: 12,
+      fontWeight: "600",
+      color: colors.error,
     },
     emptyContainer: {
       paddingVertical: spacing.xl * 2,

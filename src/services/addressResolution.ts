@@ -23,7 +23,9 @@ export async function resolveEmailToWallet({ email }: EmailLookupRequest): Promi
   EmailLookupSchema.parse({ email });
   await delay();
 
-  const user = await userDirectoryService.findUserByEmail(email);
+  // Normalize email to lowercase for consistent lookups
+  const normalizedEmail = email.toLowerCase().trim();
+  const user = await userDirectoryService.findUserByEmail(normalizedEmail);
   
   if (!user) {
     return {
@@ -33,7 +35,7 @@ export async function resolveEmailToWallet({ email }: EmailLookupRequest): Promi
   }
 
   return {
-    email: user.email,
+    email: normalizedEmail,
     isRegistered: true,
     walletAddress: user.wallets.evm || user.wallets.solana || user.wallets.tron,
     displayName: user.displayName,

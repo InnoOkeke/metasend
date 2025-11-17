@@ -38,13 +38,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (req.method === "POST") {
+      console.log("⏱️ POST /api/pending-transfers - Start");
+      const startTime = Date.now();
+      
       const parsed = CreatePendingTransferSchema.safeParse(req.body);
       if (!parsed.success) {
         return badRequest(res, parsed.error.message);
       }
+      console.log(`⏱️ Schema validation: ${Date.now() - startTime}ms`);
 
-      const transfer = await pendingTransferService.createPendingTransfer(parsed.data);
-      return res.status(201).json({ success: true, transfer });
+      // Start processing asynchronously but don't wait for completion
+      const transferPromise = pendingTransferService.createPendingTransfer(parsed.data);
+      
+      // Return immediately with pending status
+      res.status(202).json({ 
+        success: true, 
+        status: "processing",
+        message: "Transfer is being processed" 
+      });
+      
+      // Continue processing in background (fire-and-forget)
+      transferPromise
+        .then(transfer => {
+          console.log(`✅ Transfer processed: ${transfer.transferId}`);
+          console.log(`⏱️ Total time: ${Date.now() - startTime}ms`);
+        })
+        .catch(error => {
+          console.error(`❌ Transfer processing failed:`, error);
+        });
+      
+      return;
     }
 
     if (req.method === "PATCH") {

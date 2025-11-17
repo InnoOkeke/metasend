@@ -16,6 +16,7 @@ import { TippingScreen } from "../screens/TippingScreen";
 import { PaymentRequestsScreen } from "../screens/PaymentRequestsScreen";
 import { InvoicesScreen } from "../screens/InvoicesScreen";
 import { GiftsScreen } from "../screens/GiftsScreen";
+import { ClaimScreen } from "../screens/Claim/ClaimScreen";
 import { RETURNING_USER_KEY, BIOMETRIC_AUTH_KEY } from "../constants/auth";
 
 export type RootStackParamList = {
@@ -28,6 +29,7 @@ export type RootStackParamList = {
   PaymentRequests: undefined;
   Invoices: undefined;
   Gifts: undefined;
+  Claim: { transferId: string };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -171,11 +173,31 @@ export const RootNavigator: React.FC = () => {
   }
 
   return (
-    <NavigationContainer theme={navigationTheme}>
+    <NavigationContainer 
+      theme={navigationTheme}
+      linking={{
+        prefixes: ['metasend://', 'https://metasend.vercel.app'],
+        config: {
+          screens: {
+            SignIn: 'signin',
+            Home: 'home',
+            Send: 'send',
+            Claim: 'claim/:transferId',
+            OffRamp: 'offramp',
+            TransactionHistory: 'history',
+            Tipping: 'tipping',
+            PaymentRequests: 'payment-requests',
+            Invoices: 'invoices',
+            Gifts: 'gifts',
+          },
+        },
+      }}
+    >
       {isConnected ? (
         <Stack.Navigator initialRouteName="Home" screenOptions={screenOptions}>
           <Stack.Screen name="Home" component={HomeScreen} options={{ title: "MetaSend" }} />
           <Stack.Screen name="Send" component={SendScreen} options={{ title: "Send USDC" }} />
+          <Stack.Screen name="Claim" component={ClaimScreen} options={{ title: "Claim Transfer" }} />
           <Stack.Screen name="OffRamp" component={OffRampScreen} options={{ title: "On / Off Ramp" }} />
           <Stack.Screen name="TransactionHistory" component={TransactionHistoryScreen} options={{ headerShown: false }} />
           <Stack.Screen name="Tipping" component={TippingScreen} options={{ title: "Tipping" }} />
@@ -186,6 +208,11 @@ export const RootNavigator: React.FC = () => {
       ) : (
         <Stack.Navigator screenOptions={{ ...screenOptions, headerShown: false }}>
           <Stack.Screen name="SignIn" component={SignInScreen} />
+          <Stack.Screen 
+            name="Claim" 
+            component={ClaimScreen} 
+            options={{ headerShown: true, title: "Claim Transfer" }} 
+          />
         </Stack.Navigator>
       )}
     </NavigationContainer>

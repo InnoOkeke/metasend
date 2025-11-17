@@ -27,7 +27,7 @@ export default ({ config }) => ({
     awsSesSecretKey: process.env.AWS_SES_SECRET_KEY || "",
     
     // App Configuration
-    appUrl: process.env.APP_URL || "https://app.metasend.io",
+    appUrl: process.env.APP_URL || "https://metasend.vercel.app",
     supportEmail: process.env.SUPPORT_EMAIL || "support@metasend.io",
     
     // Escrow Configuration

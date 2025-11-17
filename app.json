@@ -15,6 +15,10 @@
     },
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.kellonapp.metasend",
+      "associatedDomains": [
+        "applinks:metasend.vercel.app"
+      ],
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "MetaSend uses your location to show region-specific payment providers like Paycrest for African users."
       }
@@ -47,7 +51,9 @@
           "action": "VIEW",
           "data": [
             {
-              "scheme": "metasend"
+              "scheme": "https",
+              "host": "metasend.vercel.app",
+              "pathPrefix": "/claim"
             }
           ],
           "category": [
@@ -73,7 +79,8 @@
     "extra": {
       "coinbaseAppId": "162ddeb1-c67e-43fa-b38b-78a916eb7cde",
       "coinbaseOAuthClientId": "YOUR-COINBASE-OAUTH-CLIENT-ID",
-      "coinbaseRedirectScheme": "metasend"
+      "coinbaseRedirectScheme": "metasend",
+      "appUrl": "https://metasend.vercel.app"
     }
   }
 }

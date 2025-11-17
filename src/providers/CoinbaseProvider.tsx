@@ -90,12 +90,17 @@ export const CoinbaseProvider: React.FC<React.PropsWithChildren> = ({ children }
         console.log("✅ Directory synced profile:", syncedProfile);
         setProfile(syncedProfile);
 
-        const claimed = await pendingTransferService.autoClaimForNewUser(
-          directoryProfile.userId,
-          directoryProfile.email
-        );
-        if (claimed > 0) {
-          console.log(`✅ Auto-claimed ${claimed} pending transfer(s)`);
+        // Auto-claim pending transfers (non-blocking - silent fail, users can claim via email link)
+        try {
+          const claimed = await pendingTransferService.autoClaimForNewUser(
+            directoryProfile.userId,
+            directoryProfile.email
+          );
+          if (claimed > 0) {
+            console.log(`✅ Auto-claimed ${claimed} pending transfer(s)`);
+          }
+        } catch (claimErr) {
+          // Silent fail - users can claim via email link if auto-claim times out
         }
       } catch (err) {
         console.error("❌ Error syncing user directory:", err);

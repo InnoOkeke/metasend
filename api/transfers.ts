@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { z } from "zod";
-import { getDatabase } from "../src/services/database";
+import mongoDatabase from "../src/services/mongoDatabase";
 import type { TransferRecord } from "../src/types/transfers";
 
 const authorize = (req: VercelRequest): boolean => {
@@ -45,7 +45,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const db = await getDatabase();
+    const db = mongoDatabase;
 
     if (req.method === "GET") {
       const filter: ListFilter = {};

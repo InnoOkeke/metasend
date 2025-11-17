@@ -2,7 +2,7 @@ import { resolveEmailToWallet } from "./addressResolution";
 import { emailNotificationService } from "./EmailNotificationService";
 import { getUsdcBalance, encodeUsdcTransfer } from "./blockchain";
 import { USDC_TOKEN_ADDRESS, USDC_DECIMALS } from "../config/coinbase";
-import { pendingTransferService } from "./PendingTransferService";
+import { createPendingTransfer } from "./api";
 import type { TransferIntent, TransferRecord, TransferResult } from "../types/transfers";
 
 export type { TransferIntent, TransferRecord, TransferResult } from "../types/transfers";
@@ -205,7 +205,7 @@ async function enqueuePendingTransfer(
     throw new Error("Sender identity required for pending transfers");
   }
 
-  const transfer = await pendingTransferService.createPendingTransfer({
+  const transfer = await createPendingTransfer({
     recipientEmail: intent.recipientEmail,
     senderUserId: intent.senderUserId,
     amount: intent.amountUsdc.toString(),

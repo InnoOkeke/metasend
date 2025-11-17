@@ -284,6 +284,48 @@ export async function cancelPendingTransfer(
   return response.refundTransactionHash;
 }
 
+/**
+ * Create a new pending transfer
+ */
+export interface CreatePendingTransferParams {
+  recipientEmail: string;
+  senderUserId: string;
+  amount: string;
+  token: string;
+  tokenAddress: string;
+  chain: string;
+  decimals: number;
+  message?: string;
+}
+
+export async function createPendingTransfer(
+  params: CreatePendingTransferParams
+): Promise<PendingTransferSummary> {
+  interface CreateResponse extends ApiResponse<PendingTransferSummary> {
+    transfer?: PendingTransferSummary;
+    status?: string;
+    message?: string;
+  }
+  
+  const response = await apiRequest<CreateResponse>(
+    `/api/pending-transfers`,
+    {
+      method: "POST",
+      body: JSON.stringify(params),
+    }
+  );
+  
+  // API returns 202 with processing status, but we'll return a summary
+  // The actual transfer object might not be available immediately
+  return response.transfer || {
+    transferId: `pending_${Date.now()}`,
+    ...params,
+    status: "pending" as const,
+    createdAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+  };
+}
+
 export default {
   registerUser,
   getUserByEmail,
@@ -293,4 +335,5 @@ export default {
   getTransferDetails,
   claimPendingTransfer,
   cancelPendingTransfer,
+  createPendingTransfer,
 };

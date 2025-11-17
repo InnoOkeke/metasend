@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { userDirectoryService } from "./UserDirectoryService";
+import { getUserByEmail } from "./api";
 
 export const EmailLookupSchema = z.object({
   email: z.string().email(),
@@ -17,7 +17,7 @@ export type EmailLookupResult = {
 
 /**
  * Resolve email to wallet address
- * Now powered by UserDirectoryService
+ * Now powered by API client
  */
 export async function resolveEmailToWallet({ email }: EmailLookupRequest): Promise<EmailLookupResult> {
   EmailLookupSchema.parse({ email });
@@ -25,7 +25,7 @@ export async function resolveEmailToWallet({ email }: EmailLookupRequest): Promi
 
   // Normalize email to lowercase for consistent lookups
   const normalizedEmail = email.toLowerCase().trim();
-  const user = await userDirectoryService.findUserByEmail(normalizedEmail);
+  const user = await getUserByEmail(normalizedEmail);
   
   if (!user) {
     return {
@@ -38,8 +38,8 @@ export async function resolveEmailToWallet({ email }: EmailLookupRequest): Promi
     email: normalizedEmail,
     isRegistered: true,
     walletAddress: user.wallets.evm || user.wallets.solana || user.wallets.tron,
-    displayName: user.displayName,
-    avatar: user.avatar,
+    displayName: user.profile.displayName,
+    avatar: user.profile.avatar,
   } satisfies EmailLookupResult;
 }
 

@@ -4,7 +4,7 @@
  */
 
 import { z } from "zod";
-import { db } from "./database";
+import mongoDatabase from "./mongoDatabase";
 import { escrowService } from "./EscrowService";
 import { emailNotificationService } from "./EmailNotificationService";
 import { userDirectoryService } from "./UserDirectoryService";
@@ -184,7 +184,7 @@ class PendingTransferService {
     };
 
     const dbStart = Date.now();
-    await db.createPendingTransfer(transfer);
+    await mongoDatabase.createPendingTransfer(transfer);
     console.log(`⏱️ DB insert: ${Date.now() - dbStart}ms`);
     console.log(`⏱️ Total createPendingTransfer: ${Date.now() - startTime}ms`);
 
@@ -242,7 +242,7 @@ class PendingTransferService {
       return result.transfers ?? [];
     }
 
-    const transfers = await db.getPendingTransfersByRecipientEmail(recipientEmail);
+    const transfers = await mongoDatabase.getPendingTransfersByRecipientEmail(recipientEmail);
     
     return transfers.map((transfer) => ({
       transferId: transfer.transferId,
@@ -269,7 +269,7 @@ class PendingTransferService {
       return result.transfers ?? [];
     }
 
-    const transfers = await db.getPendingTransfersBySender(senderUserId);
+    const transfers = await mongoDatabase.getPendingTransfersBySender(senderUserId);
     
     return transfers
       .filter((t) => t.status === "pending")
@@ -307,7 +307,7 @@ class PendingTransferService {
     }
 
     console.log(`[PendingTransferService] Attempting to claim transfer: ${transferId}`);
-    const transfer = await db.getPendingTransferById(transferId);
+    const transfer = await mongoDatabase.getPendingTransferById(transferId);
     
     if (!transfer) {
       console.error(`[PendingTransferService] Transfer not found: ${transferId}`);
@@ -361,7 +361,7 @@ class PendingTransferService {
 
     // Update transfer status only after successful blockchain transaction
     console.log(`[PendingTransferService] Updating transfer status to claimed`);
-    await db.updatePendingTransfer(transferId, {
+    await mongoDatabase.updatePendingTransfer(transferId, {
       status: "claimed",
       claimedAt: new Date().toISOString(),
       claimedByUserId: claimantUserId,
@@ -402,7 +402,7 @@ class PendingTransferService {
       return result.claimTransactionHash;
     }
 
-    const transfer = await db.getPendingTransferById(transferId);
+    const transfer = await mongoDatabase.getPendingTransferById(transferId);
     
     if (!transfer) {
       throw new Error("Pending transfer not found");
@@ -433,7 +433,7 @@ class PendingTransferService {
     );
 
     // Update transfer status
-    await db.updatePendingTransfer(transferId, {
+    await mongoDatabase.updatePendingTransfer(transferId, {
       status: "cancelled",
       claimTransactionHash: returnTxHash,
     });
@@ -445,7 +445,7 @@ class PendingTransferService {
    * Process expired transfers (run as cron job)
    */
   async expirePendingTransfers(): Promise<number> {
-    const expiredTransfers = await db.getExpiredPendingTransfers();
+    const expiredTransfers = await mongoDatabase.getExpiredPendingTransfers();
     let count = 0;
 
     for (const transfer of expiredTransfers) {
@@ -468,7 +468,7 @@ class PendingTransferService {
         );
 
         // Update transfer status
-        await db.updatePendingTransfer(transfer.transferId, {
+        await mongoDatabase.updatePendingTransfer(transfer.transferId, {
           status: "expired",
           claimTransactionHash: returnTxHash,
         });
@@ -498,7 +498,7 @@ class PendingTransferService {
    * Send reminders for expiring transfers (run as cron job)
    */
   async sendExpiryReminders(): Promise<number> {
-    const expiringTransfers = await db.getExpiringPendingTransfers(this.REMINDER_HOURS);
+    const expiringTransfers = await mongoDatabase.getExpiringPendingTransfers(this.REMINDER_HOURS);
     let count = 0;
 
     for (const transfer of expiringTransfers) {
@@ -544,7 +544,7 @@ class PendingTransferService {
       return result.claimedCount;
     }
 
-    const pendingTransfers = await db.getPendingTransfersByRecipientEmail(email);
+    const pendingTransfers = await mongoDatabase.getPendingTransfersByRecipientEmail(email);
     let claimedCount = 0;
 
     for (const transfer of pendingTransfers) {
@@ -572,7 +572,7 @@ class PendingTransferService {
       return result.transfer ?? null;
     }
 
-    return db.getPendingTransferById(transferId);
+    return mongoDatabase.getPendingTransferById(transferId);
   }
 
   private calculateDaysRemaining(expiresAt: string): number {

@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: metasend-api
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm run server:start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: MONGODB_URI
+        sync: false
+      - key: METASEND_API_KEY
+        sync: false
+      - key: ESCROW_MASTER_KEY
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+    healthCheckPath: /api/health

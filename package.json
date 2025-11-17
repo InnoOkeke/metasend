@@ -11,8 +11,8 @@
     "install:apk": "adb install android/app/build/outputs/apk/release/app-release.apk",
     "backfill": "node scripts/backfill.js",
     "server:dev": "ts-node -P tsconfig.server.json server.ts",
-    "server:build": "echo 'Build complete'",
-    "server:start": "ts-node -P tsconfig.server.json server.ts"
+    "server:build": "tsc -p tsconfig.server.json",
+    "server:start": "node dist/server.js"
   },
   "dependencies": {
     "@coinbase/cdp-core": "^0.0.60",

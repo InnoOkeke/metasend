@@ -2,7 +2,7 @@ services:
   - type: web
     name: metasend-api
     runtime: node
-    buildCommand: npm install
+    buildCommand: npm install && npm run server:build
     startCommand: npm run server:start
     envVars:
       - key: NODE_ENV

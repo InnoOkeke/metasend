@@ -4,7 +4,7 @@
  */
 
 import { z } from "zod";
-import { db } from "./database";
+import mongoDatabase from "./mongoDatabase";
 import { User, ChainType } from "../types/database";
 
 declare const require: any;
@@ -151,7 +151,7 @@ class UserDirectoryService {
     const normalizedEmail = email.toLowerCase().trim();
     const user = this.useRemoteApi
       ? await this.getRemoteUserByEmail(normalizedEmail)
-      : await db.getUserByEmail(normalizedEmail);
+      : await mongoDatabase.getUserByEmail(normalizedEmail);
     if (!user) return null;
 
     return this.mapUserToProfile(user);
@@ -163,7 +163,7 @@ class UserDirectoryService {
   async getUserProfile(userId: string): Promise<UserProfile | null> {
     const user = this.useRemoteApi
       ? await this.getRemoteUserById(userId)
-      : await db.getUserById(userId);
+      : await mongoDatabase.getUserById(userId);
     if (!user) return null;
 
     return this.mapUserToProfile(user);
@@ -175,7 +175,7 @@ class UserDirectoryService {
   async getUserWallets(userId: string): Promise<UserWalletsResult | null> {
     const user = this.useRemoteApi
       ? await this.getRemoteUserById(userId)
-      : await db.getUserById(userId);
+      : await mongoDatabase.getUserById(userId);
     if (!user) return null;
 
     return {
@@ -195,7 +195,7 @@ class UserDirectoryService {
     const validated = UserSearchSchema.parse(request);
     const users = this.useRemoteApi
       ? await this.searchRemoteUsers(validated.query, validated.limit)
-      : await db.searchUsersByEmail(validated.query, validated.limit);
+      : await mongoDatabase.searchUsersByEmail(validated.query, validated.limit);
 
     return users.map((user) => this.mapUserToProfile(user));
   }
@@ -206,7 +206,7 @@ class UserDirectoryService {
   async userExists(email: string): Promise<boolean> {
     const user = this.useRemoteApi
       ? await this.getRemoteUserByEmail(email)
-      : await db.getUserByEmail(email);
+      : await mongoDatabase.getUserByEmail(email);
     return user !== null;
   }
 
@@ -216,7 +216,7 @@ class UserDirectoryService {
   async getWalletForChain(userId: string, chain: ChainType): Promise<string | null> {
     const user = this.useRemoteApi
       ? await this.getRemoteUserById(userId)
-      : await db.getUserById(userId);
+      : await mongoDatabase.getUserById(userId);
     if (!user) return null;
 
     return user.wallets[chain] || null;
@@ -289,7 +289,7 @@ class UserDirectoryService {
       lastLoginAt: new Date().toISOString(),
     };
 
-    await db.createUser(user);
+    await mongoDatabase.createUser(user);
     return this.mapUserToProfile(user);
   }
 
@@ -309,7 +309,7 @@ class UserDirectoryService {
       return;
     }
 
-    await db.updateUser(userId, payload);
+    await mongoDatabase.updateUser(userId, payload);
   }
 
   private mapUserToProfile(user: User): UserProfile {

@@ -7,7 +7,7 @@ import { ChainType } from "../types/database";
 import { createWalletClient, createPublicClient, http, parseUnits, formatUnits } from "viem";
 import { baseSepolia } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
-import { BASE_RPC_URL, USDC_TOKEN_ADDRESS, USDC_DECIMALS } from "../config/coinbase";
+import { BASE_RPC_URL, USDC_TOKEN_ADDRESS, USDC_DECIMALS } from "../config/coinbase.server";
 
 declare const require: any;
 

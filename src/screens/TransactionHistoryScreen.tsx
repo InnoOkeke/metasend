@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ScrollView, Alert } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -14,7 +14,7 @@ import { getUsdcTransactions, type BlockchainTransaction } from "../services/blo
 import { getCryptoGifts, type CryptoGift } from "../services/gifts";
 import { getPaymentRequests, type PaymentRequest } from "../services/paymentRequests";
 import { getInvoices, type Invoice } from "../services/invoices";
-import { cancelPendingTransfer } from "../services/api";
+import { cancelPendingTransfer, getSentPendingTransfers, type PendingTransferSummary } from "../services/api";
 
 type Props = NativeStackScreenProps<RootStackParamList, "TransactionHistory">;
 
@@ -26,20 +26,60 @@ type ActivityItem = {
   timestamp: number;
 };
 
+const pendingStatusLabels: Record<PendingTransferSummary["status"], string> = {
+  pending: "Pending",
+  claimed: "Claimed",
+  expired: "Expired",
+  cancelled: "Cancelled",
+};
+
 export const TransactionHistoryScreen: React.FC<Props> = ({ navigation }) => {
   const { profile } = useCoinbase();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [activeTab, setActiveTab] = useState<TabType>("all");
+  const [shouldPollPending, setShouldPollPending] = useState(false);
   const queryClient = useQueryClient();
 
-  const cancelTransferMutation = useMutation({
-    mutationFn: async (transferId: string) => {
+  const { data: sentPendingTransfers } = useQuery({
+    queryKey: ["sentPendingTransfers", profile?.userId],
+    queryFn: () => {
+      if (!profile?.userId) throw new Error("No user");
+      return getSentPendingTransfers(profile.userId);
+    },
+    enabled: !!profile?.userId,
+    refetchInterval: shouldPollPending ? 15000 : false,
+  });
+
+  useEffect(() => {
+    if (!sentPendingTransfers) {
+      setShouldPollPending(false);
+      return;
+    }
+    setShouldPollPending(sentPendingTransfers.some(transfer => transfer.status === "pending"));
+  }, [sentPendingTransfers]);
+
+  const pendingTransferMap = useMemo(() => {
+    const map = new Map<string, PendingTransferSummary>();
+    sentPendingTransfers?.forEach(transfer => {
+      map.set(transfer.transferId, transfer);
+    });
+    return map;
+  }, [sentPendingTransfers]);
+
+  type CancelTransferVariables = {
+    transferId: string;
+    placeholderId?: string;
+  };
+
+  const cancelTransferMutation = useMutation<string, Error, CancelTransferVariables>({
+    mutationFn: async ({ transferId }: CancelTransferVariables) => {
       if (!profile?.userId) throw new Error("User not authenticated");
       return await cancelPendingTransfer(transferId, profile.userId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["transfers"] });
+      queryClient.invalidateQueries({ queryKey: ["sentPendingTransfers"] });
       Alert.alert("Success", "Transfer cancelled and funds refunded");
     },
     onError: (error) => {
@@ -47,7 +87,47 @@ export const TransactionHistoryScreen: React.FC<Props> = ({ navigation }) => {
     },
   });
 
-  const handleCancelTransfer = (transferId: string) => {
+  const getPendingSummaryForTransfer = useCallback(
+    (transfer: TransferRecord): PendingTransferSummary | undefined => {
+      if (!sentPendingTransfers || sentPendingTransfers.length === 0) {
+        return undefined;
+      }
+
+      if (transfer.pendingTransferId) {
+        const directMatch = pendingTransferMap.get(transfer.pendingTransferId);
+        if (directMatch) {
+          return directMatch;
+        }
+      }
+
+      const normalizedEmail = transfer.intent.recipientEmail.toLowerCase();
+      const targetAmount = Number(transfer.intent.amountUsdc);
+      const transferTimestamp = new Date(transfer.createdAt).getTime();
+      const MATCH_WINDOW_MS = 15 * 60 * 1000; // 15 minutes tolerance
+
+      return sentPendingTransfers.find(summary => {
+        const summaryTimestamp = new Date(summary.createdAt).getTime();
+        const sameEmail = summary.recipientEmail.toLowerCase() === normalizedEmail;
+        const sameAmount = Number(summary.amount) === targetAmount;
+        const withinWindow = Math.abs(summaryTimestamp - transferTimestamp) <= MATCH_WINDOW_MS;
+        return sameEmail && sameAmount && withinWindow;
+      });
+    },
+    [pendingTransferMap, sentPendingTransfers]
+  );
+
+  const handleCancelTransfer = (transfer: TransferRecord) => {
+    const pendingSummary = getPendingSummaryForTransfer(transfer);
+    const effectiveTransferId = pendingSummary?.transferId ?? transfer.pendingTransferId;
+
+    if (!effectiveTransferId) {
+      Alert.alert(
+        "Transfer still syncing",
+        "Please wait a few seconds while we register this pending transfer, then try again."
+      );
+      return;
+    }
+
     Alert.alert(
       "Cancel Transfer?",
       "This will refund the USDC to your wallet. The recipient won't be able to claim it.",
@@ -56,7 +136,11 @@ export const TransactionHistoryScreen: React.FC<Props> = ({ navigation }) => {
         { 
           text: "Cancel Transfer", 
           style: "destructive",
-          onPress: () => cancelTransferMutation.mutate(transferId)
+          onPress: () =>
+            cancelTransferMutation.mutate({
+              transferId: effectiveTransferId,
+              placeholderId: transfer.pendingTransferId,
+            })
         },
       ]
     );
@@ -182,7 +266,23 @@ export const TransactionHistoryScreen: React.FC<Props> = ({ navigation }) => {
   const renderActivity = ({ item }: { item: ActivityItem }) => {
     if (item.type === "transfer") {
       const transfer = item.data as TransferRecord;
-      const isPending = transfer.status === "pending_recipient_signup";
+      const pendingDetails = getPendingSummaryForTransfer(transfer);
+      const pendingStatusLabel = pendingDetails
+        ? pendingStatusLabels[pendingDetails.status]
+        : transfer.status === "sent"
+          ? "Completed"
+          : "Pending";
+      const canCancel = Boolean(
+        pendingDetails ? pendingDetails.status === "pending" : transfer.status === "pending_recipient_signup" && transfer.pendingTransferId
+      );
+      const effectiveTransferId = pendingDetails?.transferId ?? transfer.pendingTransferId;
+      const isCancelling = Boolean(
+        cancelTransferMutation.isPending &&
+          effectiveTransferId &&
+          cancelTransferMutation.variables &&
+          (cancelTransferMutation.variables.transferId === effectiveTransferId ||
+            (transfer.pendingTransferId && cancelTransferMutation.variables.placeholderId === transfer.pendingTransferId))
+      );
       return (
         <View style={styles.activityCard}>
           <View style={styles.activityIcon}>
@@ -191,16 +291,16 @@ export const TransactionHistoryScreen: React.FC<Props> = ({ navigation }) => {
           <View style={styles.activityContent}>
             <Text style={styles.activityTitle}>Transfer to {transfer.intent.recipientEmail}</Text>
             <Text style={styles.activitySubtitle}>
-              {transfer.status === "sent" ? "Completed" : "Pending"} · {formatRelativeDate(transfer.createdAt)}
+              {pendingStatusLabel} · {formatRelativeDate(transfer.createdAt)}
             </Text>
-            {isPending && transfer.pendingTransferId && (
+            {canCancel && (
               <TouchableOpacity 
                 style={styles.cancelButton}
-                onPress={() => handleCancelTransfer(transfer.pendingTransferId!)}
+                onPress={() => handleCancelTransfer(transfer)}
                 disabled={cancelTransferMutation.isPending}
               >
                 <Text style={styles.cancelButtonText}>
-                  {cancelTransferMutation.isPending ? "Cancelling..." : "Cancel Transfer"}
+                  {isCancelling ? "Cancelling..." : "Cancel Transfer"}
                 </Text>
               </TouchableOpacity>
             )}

@@ -49,7 +49,7 @@ yarn-error.*
 .gitignore
 
 # Misc
+api/
 *.md
-!api/README.md
 README.md
 package-lock.json

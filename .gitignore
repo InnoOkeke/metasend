@@ -41,6 +41,12 @@ yarn-error.*
 /ios
 /android
 
+# Hardhat / Solidity build artifacts
+artifacts/
+cache/
+hardhat-dist/
+typechain-types/
+
 .vercel
 .github
 

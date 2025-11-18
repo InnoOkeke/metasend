@@ -22,8 +22,41 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: 'Missing required fields: to, subject, html' });
     }
 
+    const allowedDomains = (process.env.RESEND_ALLOWED_FROM_DOMAINS || 'kellon.xyz,resend.dev')
+      .split(',')
+      .map((domain: string) => domain.trim().toLowerCase())
+      .filter(Boolean);
+
+    const fallbackFrom = process.env.RESEND_FALLBACK_FROM || 'MetaSend <noreply@kellon.xyz>';
+    const onboardingFrom = 'MetaSend <onboarding@resend.dev>';
+
+    const extractEmail = (address: string) => {
+      const match = address.match(/<([^>]+)>/);
+      return (match?.[1] || address).trim().toLowerCase();
+    };
+
+    const isAllowed = (address?: string) => {
+      if (!address) return false;
+      const email = extractEmail(address);
+      const domain = email.split('@')[1];
+      return !!domain && allowedDomains.includes(domain);
+    };
+
+    const candidateFroms = [
+      typeof from === 'string' && from.trim().length > 0 ? from.trim() : undefined,
+      process.env.RESEND_FROM_EMAIL,
+      fallbackFrom,
+      onboardingFrom,
+    ];
+
+    const fromAddress = candidateFroms.find((candidate) => isAllowed(candidate)) || onboardingFrom;
+
+    if (!isAllowed(fromAddress)) {
+      console.warn('⚠️ Falling back to verified sender domain for Resend.');
+    }
+
     const { data, error } = await resend.emails.send({
-      from: from || process.env.SUPPORT_EMAIL || 'MetaSend <support@metasend.io>',
+      from: fromAddress,
       to,
       subject,
       html,

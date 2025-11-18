@@ -97,7 +97,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           title: data.title,
           description: data.description,
           suggestedAmounts: data.suggestedAmounts,
-          acceptedTokens: data.acceptedTokens,
+          acceptedTokens: data.acceptedTokens as TipJar["acceptedTokens"],
           status: "active",
           totalTipsReceived: 0,
           tipCount: 0,

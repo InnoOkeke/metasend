@@ -1,17 +1,16 @@
 import React, { useCallback, useMemo, useState, useEffect } from "react";
-import { ActivityIndicator, StyleSheet, Text, View, FlatList, ListRenderItemInfo, RefreshControl, Modal, Pressable, TouchableOpacity, ScrollView, Clipboard, Alert } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, View, FlatList, ListRenderItemInfo, RefreshControl, Modal, Pressable, TouchableOpacity, ScrollView, Clipboard, Alert, BackHandler } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useFocusEffect } from "@react-navigation/native";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { WebView } from "react-native-webview";
 
-import { PrimaryButton } from "../components/PrimaryButton";
 import { ToastModal } from "../components/ToastModal";
 import { useCoinbase } from "../providers/CoinbaseProvider";
 import { useTheme } from "../providers/ThemeProvider";
 import { listTransfers, TransferRecord } from "../services/transfers";
 import { getUsdcBalance, getUsdcTransactions, type BlockchainTransaction } from "../services/blockchain";
-import { getPendingTransfers, type PendingTransferSummary } from "../services/api";
+import { getPendingTransfers, type PendingTransferSummary, claimPendingTransfer, autoClaimPendingTransfers } from "../services/api";
 import { RootStackParamList } from "../navigation/RootNavigator";
 import { spacing, typography } from "../utils/theme";
 import type { ColorPalette } from "../utils/theme";
@@ -43,6 +42,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [isExchangeModalVisible, setIsExchangeModalVisible] = useState(false);
+  const [isSendOptionsVisible, setIsSendOptionsVisible] = useState(false);
   const [isMoreFeaturesModalVisible, setIsMoreFeaturesModalVisible] = useState(false);
   const [isLocationModalVisible, setIsLocationModalVisible] = useState(false);
   const [isCurrencySelectorVisible, setIsCurrencySelectorVisible] = useState(false);
@@ -252,6 +252,64 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     },
   });
 
+  const pendingClaimables = useMemo(
+    () => pendingTransfers.filter((transfer) => transfer.status === "pending"),
+    [pendingTransfers]
+  );
+  const displayedPendingTransfers = pendingClaimables.slice(0, 2);
+
+  const getDaysRemaining = useCallback((transfer: PendingTransferSummary) => {
+    if (typeof transfer.daysRemaining === "number") {
+      return transfer.daysRemaining;
+    }
+    const expires = new Date(transfer.expiresAt).getTime();
+    return Math.max(0, Math.ceil((expires - Date.now()) / (1000 * 60 * 60 * 24)));
+  }, []);
+
+  const claimTransferMutation = useMutation<string, Error, string>({
+    mutationFn: async (transferId: string) => {
+      if (!profile?.userId) {
+        throw new Error("Please sign in to claim transfers.");
+      }
+      return claimPendingTransfer(transferId, profile.userId);
+    },
+  });
+
+  const claimAllMutation = useMutation<number, Error, void>({
+    mutationFn: async () => {
+      if (!profile?.userId || !profile?.email) {
+        throw new Error("Missing account details for claiming transfers.");
+      }
+      return autoClaimPendingTransfers(profile.userId, profile.email);
+    },
+  });
+
+  const handleManualClaim = async (transfer: PendingTransferSummary) => {
+    try {
+      await claimTransferMutation.mutateAsync(transfer.transferId);
+      showToast(`Claimed ${transfer.amount} ${transfer.token}`, "success");
+      await Promise.all([refetchPendingTransfers(), refetch(), refetchBalance()]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to claim transfer";
+      showToast(message, "error");
+    }
+  };
+
+  const handleManualClaimAll = async () => {
+    try {
+      const claimedCount = await claimAllMutation.mutateAsync();
+      if (claimedCount > 0) {
+        showToast(`Claimed ${claimedCount} pending ${claimedCount === 1 ? "transfer" : "transfers"}`, "success");
+      } else {
+        showToast("No pending transfers found for this email", "info");
+      }
+      await Promise.all([refetchPendingTransfers(), refetch(), refetchBalance()]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to claim pending transfers";
+      showToast(message, "error");
+    }
+  };
+
   useFocusEffect(
     useCallback(() => {
       if (hasBaseWallet) {
@@ -288,6 +346,37 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     
     initializeLocation();
   }, []);
+
+  useEffect(() => {
+    if (!isSendOptionsVisible) {
+      return;
+    }
+
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      handleCloseSendOptions();
+      return true;
+    });
+
+    return () => subscription.remove();
+  }, [isSendOptionsVisible]);
+
+  const handleOpenSendOptions = () => {
+    setIsSendOptionsVisible(true);
+  };
+
+  const handleCloseSendOptions = () => {
+    setIsSendOptionsVisible(false);
+  };
+
+  const handleSendViaEmail = () => {
+    setIsSendOptionsVisible(false);
+    navigation.navigate("Send");
+  };
+
+  const handleInternationalTransfer = () => {
+    setIsSendOptionsVisible(false);
+    navigation.navigate("InternationalTransfer");
+  };
 
   const handleBuyFunds = () => {
     setSelectedRampType("onramp");
@@ -506,10 +595,75 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         </TouchableOpacity>
       </View>
 
-      {/* Claimable transfers removed - users claim via web link from email only */}
+      {pendingClaimables.length > 0 && (
+        <View style={styles.pendingTransfersCard}>
+          <Text style={styles.pendingTitle}>Transfers waiting for you</Text>
+          <Text style={styles.pendingSubtitle}>
+            We auto-claim as soon as you sign in. If something is still pending, use the buttons below to finish the claim.
+          </Text>
+
+          {displayedPendingTransfers.map((transfer) => {
+            const isClaimingThis =
+              claimTransferMutation.isPending && claimTransferMutation.variables === transfer.transferId;
+            return (
+              <View key={transfer.transferId} style={styles.pendingRow}>
+                <View style={styles.pendingInfo}>
+                  <Text style={styles.pendingAmount}>
+                    {transfer.amount} {transfer.token}
+                  </Text>
+                  <Text style={styles.pendingMeta}>from {transfer.senderName || transfer.senderEmail}</Text>
+                  <Text style={styles.pendingMeta}>Expires in {getDaysRemaining(transfer)} days</Text>
+                  <TouchableOpacity
+                    onPress={() => navigation.navigate("Claim", { transferId: transfer.transferId })}
+                    style={styles.pendingLinkButton}
+                  >
+                    <Text style={styles.pendingLinkText}>Open manual claim screen</Text>
+                  </TouchableOpacity>
+                </View>
+                <TouchableOpacity
+                  style={[
+                    styles.pendingClaimButton,
+                    (isClaimingThis || claimAllMutation.isPending) && styles.pendingClaimButtonDisabled,
+                  ]}
+                  onPress={() => handleManualClaim(transfer)}
+                  disabled={isClaimingThis || claimAllMutation.isPending}
+                >
+                  {isClaimingThis ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.pendingClaimButtonText}>Claim</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            );
+          })}
+
+          {pendingClaimables.length > displayedPendingTransfers.length && (
+            <Text style={styles.pendingMeta}>
+              +{pendingClaimables.length - displayedPendingTransfers.length} more pending transfer
+              {pendingClaimables.length - displayedPendingTransfers.length > 1 ? "s" : ""}
+            </Text>
+          )}
+
+          <TouchableOpacity
+            style={[
+              styles.claimAllButton,
+              claimAllMutation.isPending && styles.pendingClaimButtonDisabled,
+            ]}
+            onPress={handleManualClaimAll}
+            disabled={claimAllMutation.isPending}
+          >
+            {claimAllMutation.isPending ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.claimAllButtonText}>Claim everything automatically</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      )}
 
       <View style={styles.quickActions}>
-        <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate("Send")}>
+        <TouchableOpacity style={styles.actionCard} onPress={handleOpenSendOptions}>
           <View style={styles.actionIconContainer}>
             <Text style={styles.actionIcon}>📤</Text>
           </View>
@@ -565,6 +719,42 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
       />
 
         </>
+      )}
+
+      {isSendOptionsVisible && (
+        <View style={styles.inlineSendOverlay} pointerEvents="box-none">
+          <Pressable style={styles.inlineSendBackdrop} onPress={handleCloseSendOptions} />
+          <View style={styles.inlineSendSheet} accessibilityLabel="Send options">
+            <Text style={styles.inlineSendTitle}>Choose how to send</Text>
+            <Text style={styles.inlineSendSubtitle}>
+              Pick MetaSend email delivery or route funds to a global payout provider.
+            </Text>
+
+            <TouchableOpacity style={styles.inlineSendButton} onPress={handleSendViaEmail}>
+              <View style={styles.inlineSendButtonCopy}>
+                <Text style={styles.inlineSendButtonTitle}>Send via email</Text>
+                <Text style={styles.inlineSendButtonSubtitle}>
+                  Resolve wallets automatically and keep funds pending for new recipients.
+                </Text>
+              </View>
+              <Text style={styles.inlineSendBadge}>MetaSend</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.inlineSendButton} onPress={handleInternationalTransfer}>
+              <View style={styles.inlineSendButtonCopy}>
+                <Text style={styles.inlineSendButtonTitle}>International transfer</Text>
+                <Text style={styles.inlineSendButtonSubtitle}>
+                  Bank, mobile money, and card payouts via Coinbase, MoonPay, Transak & more.
+                </Text>
+              </View>
+              <Text style={styles.inlineSendBadge}>New</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.inlineSendDismiss} onPress={handleCloseSendOptions}>
+              <Text style={styles.inlineSendDismissText}>Dismiss</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       )}
 
       {/* More Features Modal */}
@@ -1306,7 +1496,89 @@ const createStyles = (colors: ColorPalette) =>
       borderWidth: 1,
       borderColor: `${colors.primary}20`,
     },
-    // Removed pendingTransfersCard styles - users claim via web only
+    pendingTransfersCard: {
+      backgroundColor: colors.cardBackground,
+      borderRadius: 20,
+      padding: spacing.lg,
+      marginHorizontal: spacing.lg,
+      marginBottom: spacing.lg,
+      borderWidth: 1,
+      borderColor: `${colors.primary}26`,
+      shadowColor: colors.primary,
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.06,
+      shadowRadius: 14,
+      elevation: 4,
+      gap: spacing.md,
+    },
+    pendingTitle: {
+      ...typography.subtitle,
+      color: colors.textPrimary,
+      fontSize: 18,
+      fontWeight: "700",
+    },
+    pendingSubtitle: {
+      ...typography.body,
+      color: colors.textSecondary,
+      fontSize: 13,
+    },
+    pendingRow: {
+      flexDirection: "row",
+      gap: spacing.md,
+      alignItems: "flex-start",
+    },
+    pendingInfo: {
+      flex: 1,
+      gap: spacing.xs,
+    },
+    pendingAmount: {
+      fontSize: 18,
+      fontWeight: "700",
+      color: colors.textPrimary,
+    },
+    pendingMeta: {
+      ...typography.body,
+      color: colors.textSecondary,
+      fontSize: 12,
+    },
+    pendingClaimButton: {
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.md,
+      borderRadius: 12,
+      backgroundColor: colors.primary,
+      minWidth: 88,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    pendingClaimButtonDisabled: {
+      opacity: 0.6,
+    },
+    pendingClaimButtonText: {
+      color: "#FFFFFF",
+      fontWeight: "600",
+    },
+    pendingLinkButton: {
+      alignSelf: "flex-start",
+      paddingVertical: spacing.xs,
+    },
+    pendingLinkText: {
+      color: colors.primary,
+      fontSize: 12,
+      fontWeight: "600",
+    },
+    claimAllButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      paddingVertical: spacing.sm,
+      borderRadius: 12,
+      backgroundColor: colors.textPrimary,
+      marginTop: spacing.sm,
+    },
+    claimAllButtonText: {
+      color: colors.background,
+      fontWeight: "600",
+    },
     profileRow: {
       flexDirection: "row",
       alignItems: "center",
@@ -1646,6 +1918,75 @@ const createStyles = (colors: ColorPalette) =>
       color: colors.textSecondary,
       fontSize: 13,
       marginTop: 2,
+    },
+    inlineSendOverlay: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: "rgba(0, 0, 0, 0.5)",
+      justifyContent: "flex-end",
+      zIndex: 20,
+    },
+    inlineSendBackdrop: {
+      ...StyleSheet.absoluteFillObject,
+    },
+    inlineSendSheet: {
+      backgroundColor: colors.cardBackground,
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      padding: spacing.lg,
+      gap: spacing.md,
+    },
+    inlineSendTitle: {
+      ...typography.subtitle,
+      color: colors.textPrimary,
+      fontSize: 20,
+      fontWeight: "700",
+    },
+    inlineSendSubtitle: {
+      ...typography.body,
+      color: colors.textSecondary,
+    },
+    inlineSendButton: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 18,
+      padding: spacing.md,
+      backgroundColor: colors.background,
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      gap: spacing.md,
+    },
+    inlineSendButtonCopy: {
+      flex: 1,
+      gap: spacing.xs,
+    },
+    inlineSendButtonTitle: {
+      fontSize: 16,
+      fontWeight: "600",
+      color: colors.textPrimary,
+    },
+    inlineSendButtonSubtitle: {
+      fontSize: 13,
+      color: colors.textSecondary,
+    },
+    inlineSendBadge: {
+      paddingVertical: spacing.xs,
+      paddingHorizontal: spacing.sm,
+      borderRadius: 999,
+      backgroundColor: colors.primary,
+      color: "#fff",
+      fontSize: 12,
+      fontWeight: "600",
+    },
+    inlineSendDismiss: {
+      alignSelf: "center",
+      marginTop: spacing.sm,
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.lg,
+    },
+    inlineSendDismissText: {
+      color: colors.textSecondary,
+      fontWeight: "600",
     },
     // Ramp Modal Styles
     rampModalContainer: {

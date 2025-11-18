@@ -103,7 +103,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         clientEmail: data.clientEmail.toLowerCase().trim(),
         clientName: data.clientName,
         clientAddress: data.clientAddress,
-        items: data.items,
+        items: data.items as InvoiceItem[],
         subtotal: data.subtotal,
         tax: data.tax,
         taxRate: data.taxRate,

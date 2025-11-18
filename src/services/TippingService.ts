@@ -73,7 +73,7 @@ class TippingService {
       title: validated.title,
       description: validated.description,
       suggestedAmounts: validated.suggestedAmounts,
-      acceptedTokens: validated.acceptedTokens,
+      acceptedTokens: validated.acceptedTokens as TipJar["acceptedTokens"],
       status: "active",
       totalTipsReceived: 0,
       tipCount: 0,

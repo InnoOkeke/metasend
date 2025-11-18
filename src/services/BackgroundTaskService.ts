@@ -11,6 +11,8 @@
 
 import { pendingTransferService } from "./PendingTransferService";
 
+declare const __DEV__: boolean | undefined;
+
 class BackgroundTaskService {
   private intervals: NodeJS.Timeout[] = [];
 
@@ -94,7 +96,7 @@ class BackgroundTaskService {
 export const backgroundTaskService = new BackgroundTaskService();
 
 // Auto-start in development (comment out in production)
-if (__DEV__) {
+if (typeof __DEV__ !== "undefined" && __DEV__) {
   // Don't auto-start in dev to avoid unnecessary background tasks
   // Uncomment if you want to test:
   // backgroundTaskService.startAll();

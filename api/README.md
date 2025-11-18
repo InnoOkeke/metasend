@@ -80,7 +80,11 @@ Required in Vercel project settings:
 - `CRON_SECRET` - Secret for authenticating cron job requests
 - `SUPPORT_EMAIL` - From email address (must be verified in Resend)
 - `MONGODB_URI` - MongoDB connection string
-- `ESCROW_MASTER_KEY` - Master key for escrow wallet encryption
+- `ESCROW_CONTRACT_ADDRESS` - Deployed shared escrow contract address (Base/Base Sepolia)
+- `ESCROW_TREASURY_WALLET` - Coinbase smart wallet that funds on-chain transfers
+- `ESCROW_TOKEN_ADDRESS` - ERC-20 token contract (defaults to USDC)
+- `ESCROW_NETWORK` - `base` or `base-sepolia`
+- `PAYMASTER_URL` - Coinbase paymaster endpoint (if overriding default)
 
 ## Deployment
 

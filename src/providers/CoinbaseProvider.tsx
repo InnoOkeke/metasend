@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { useIsSignedIn, useSignOut, CDPContext } from "@coinbase/cdp-hooks";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-import { registerUser } from "../services/api";
+import { registerUser, autoClaimPendingTransfers } from "../services/api";
 import { BIOMETRIC_AUTH_KEY, RETURNING_USER_KEY } from "../constants/auth";
 
 export type CoinbaseProfile = {
@@ -89,7 +89,14 @@ export const CoinbaseProvider: React.FC<React.PropsWithChildren> = ({ children }
         console.log("✅ Directory synced profile:", syncedProfile);
         setProfile(syncedProfile);
 
-        // Auto-claim removed - users claim via email link only
+        try {
+          const claimedCount = await autoClaimPendingTransfers(syncedProfile.userId, syncedProfile.email);
+          if (claimedCount > 0) {
+            console.log(`✅ Auto-claimed ${claimedCount} pending transfer${claimedCount === 1 ? "" : "s"}`);
+          }
+        } catch (autoClaimError) {
+          console.warn("⚠️ Auto-claim failed", autoClaimError);
+        }
       } catch (err) {
         console.error("❌ Error syncing user directory:", err);
         setProfile(null);

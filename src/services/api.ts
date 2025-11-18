@@ -120,6 +120,7 @@ export async function registerUser(
     body: JSON.stringify({
       userId: params.userId,
       email: params.email,
+
       emailVerified: params.emailVerified,
       walletAddress: params.walletAddress,
       displayName: params.displayName,
@@ -175,20 +176,32 @@ export interface PendingTransferSummary {
   transferId: string;
   senderUserId: string;
   senderEmail: string;
+  senderName?: string;
   recipientEmail: string;
   amount: string;
+  token: string;
+  tokenAddress: string;
+  chain: string;
+  decimals: number;
   message?: string;
   createdAt: string;
   expiresAt: string;
+  daysRemaining?: number;
   status: "pending" | "claimed" | "expired" | "cancelled";
+  escrowTransferId?: string;
+  escrowTxHash?: string;
+  escrowStatus?: "pending" | "claimed" | "refunded" | "expired";
+  recipientHash?: string;
+  recipientWallet?: string;
+  lastChainSyncAt?: string;
 }
 
 export interface PendingTransferDetails extends PendingTransferSummary {
-  escrowWalletAddress: string;
   transactionHash?: string;
   claimedAt?: string;
   claimedBy?: string;
   cancelledAt?: string;
+  claimTransactionHash?: string;
   refundTransactionHash?: string;
 }
 
@@ -272,6 +285,29 @@ export async function claimPendingTransfer(
   return response.claimTransactionHash;
 }
 
+export async function autoClaimPendingTransfers(
+  userId: string,
+  email: string
+): Promise<number> {
+  interface AutoClaimResponse extends ApiResponse<number> {
+    claimedCount: number;
+  }
+
+  const response = await apiRequest<AutoClaimResponse>(
+    `/api/pending-transfers`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({
+        action: "auto-claim",
+        userId,
+        email,
+      }),
+    }
+  );
+
+  return response.claimedCount;
+}
+
 /**
  * Cancel a pending transfer
  */
@@ -335,12 +371,19 @@ export async function createPendingTransfer(
     transferId: `pending_${Date.now()}`,
     senderEmail: '', // Will be filled by backend
     senderUserId: params.senderUserId,
+    senderName: '',
     recipientEmail: params.recipientEmail,
     amount: params.amount,
+    token: params.token,
+    tokenAddress: params.tokenAddress,
+    chain: params.chain,
+    decimals: params.decimals,
     message: params.message,
     status: "pending" as const,
     createdAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    daysRemaining: 7,
+    escrowStatus: "pending",
   };
 }
 
@@ -352,6 +395,7 @@ export default {
   getSentPendingTransfers,
   getTransferDetails,
   claimPendingTransfer,
+  autoClaimPendingTransfers,
   cancelPendingTransfer,
   createPendingTransfer,
 };

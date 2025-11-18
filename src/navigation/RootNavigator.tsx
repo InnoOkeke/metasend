@@ -17,12 +17,14 @@ import { PaymentRequestsScreen } from "../screens/PaymentRequestsScreen";
 import { InvoicesScreen } from "../screens/InvoicesScreen";
 import { GiftsScreen } from "../screens/GiftsScreen";
 import { ClaimScreen } from "../screens/Claim/ClaimScreen";
+import { InternationalTransferScreen } from "../screens/InternationalTransfer/InternationalTransferScreen";
 import { RETURNING_USER_KEY, BIOMETRIC_AUTH_KEY } from "../constants/auth";
 
 export type RootStackParamList = {
   SignIn: undefined;
   Home: undefined;
   Send: undefined;
+  InternationalTransfer: undefined;
   OffRamp: undefined;
   TransactionHistory: undefined;
   Tipping: undefined;
@@ -182,6 +184,7 @@ export const RootNavigator: React.FC = () => {
             SignIn: 'signin',
             Home: 'home',
             Send: 'send',
+            InternationalTransfer: 'international-transfer',
             Claim: 'claim/:transferId',
             OffRamp: 'offramp',
             TransactionHistory: 'history',
@@ -197,6 +200,11 @@ export const RootNavigator: React.FC = () => {
         <Stack.Navigator initialRouteName="Home" screenOptions={screenOptions}>
           <Stack.Screen name="Home" component={HomeScreen} options={{ title: "MetaSend" }} />
           <Stack.Screen name="Send" component={SendScreen} options={{ title: "Send USDC" }} />
+          <Stack.Screen
+            name="InternationalTransfer"
+            component={InternationalTransferScreen}
+            options={{ title: "International Transfer", headerShown: false }}
+          />
           <Stack.Screen name="Claim" component={ClaimScreen} options={{ title: "Claim Transfer" }} />
           <Stack.Screen name="OffRamp" component={OffRampScreen} options={{ title: "On / Off Ramp" }} />
           <Stack.Screen name="TransactionHistory" component={TransactionHistoryScreen} options={{ headerShown: false }} />

@@ -13,7 +13,55 @@ services:
         sync: false
       - key: METASEND_API_KEY
         sync: false
-      - key: ESCROW_MASTER_KEY
+      - key: CRON_SECRET
+        sync: false
+      - key: ESCROW_CONTRACT_ADDRESS
+        sync: false
+      - key: ESCROW_TREASURY_WALLET
+        sync: false
+      - key: ESCROW_TOKEN_ADDRESS
+        sync: false
+      - key: ESCROW_NETWORK
+        value: base
+      - key: ESCROW_RPC_URL
+        sync: false
+      - key: ESCROW_SALT_VERSION
+        value: MS_ESCROW_V1
+      - key: ESCROW_EXPIRY_SECONDS
+        value: "604800"
+      - key: ESCROW_USE_MOCK
+        value: "false"
+      - key: PAYMASTER_URL
+        sync: false
+      - key: CDP_BACKEND_ACCOUNT_NAME
+        value: metasend-backend
+      - key: CDP_BACKEND_SMART_ACCOUNT_NAME
+        value: metasend-escrow
+      - key: COINBASE_API_KEY
+        sync: false
+      - key: COINBASE_API_SECRET
+        sync: false
+      - key: COINBASE_PAYMASTER_API_KEY
+        sync: false
+      - key: MOONPAY_API_KEY
+        sync: false
+      - key: MOONPAY_SECRET_KEY
+        sync: false
+      - key: TRANSAK_API_KEY
+        sync: false
+      - key: TRANSAK_SECRET_KEY
+        sync: false
+      - key: PAYCREST_API_KEY
+        sync: false
+      - key: PAYCREST_SECRET_KEY
+        sync: false
+      - key: ALCHEMY_PAY_API_KEY
+        sync: false
+      - key: MERCURYO_API_KEY
+        sync: false
+      - key: PAYANT_API_KEY
+        sync: false
+      - key: PAYBIS_API_KEY
         sync: false
       - key: RESEND_API_KEY
         sync: false

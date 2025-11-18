@@ -12,7 +12,11 @@
     "backfill": "node scripts/backfill.js",
     "server:dev": "ts-node -P tsconfig.server.json server.ts",
     "server:build": "tsc -p tsconfig.server.json --noEmitOnError false || exit 0",
-    "server:start": "node dist/server.js"
+    "server:start": "node dist/server.js",
+    "migrate:pending-transfers": "ts-node scripts/migrate-shared-escrow.ts",
+    "contracts:compile": "hardhat compile",
+    "contracts:test": "hardhat test",
+    "contracts:deploy:local": "hardhat run scripts/deploy-shared-escrow.ts --network hardhat"
   },
   "dependencies": {
     "@coinbase/cdp-core": "^0.0.60",
@@ -20,6 +24,7 @@
     "@coinbase/cdp-react": "^0.0.60",
     "@coinbase/cdp-react-native": "^0.0.1",
     "@coinbase/cdp-sdk": "^1.38.5",
+    "@coinbase/smart-wallet": "^0.2.4",
     "@coinbase/wallet-mobile-sdk": "^1.1.2",
     "@coinbase/wallet-sdk": "^4.3.7",
     "@react-native-async-storage/async-storage": "^2.2.0",
@@ -43,6 +48,7 @@
     "expo-status-bar": "~3.0.8",
     "expo-web-browser": "^15.0.9",
     "express": "^5.1.0",
+    "@openzeppelin/contracts": "^5.0.2",
     "mongodb": "^7.0.0",
     "react": "19.1.0",
     "react-native": "0.81.5",
@@ -60,8 +66,10 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "@types/react": "~19.1.0",
     "babel-preset-expo": "^54.0.7",
+    "hardhat": "^2.22.5",
     "vercel": "^48.10.2"
   },
   "private": true

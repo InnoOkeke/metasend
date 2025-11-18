@@ -103,11 +103,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return badRequest(res, "transferId and senderUserId are required");
         }
 
-        const claimTransactionHash = await pendingTransferService.cancelPendingTransfer(
+        const refundTransactionHash = await pendingTransferService.cancelPendingTransfer(
           transferId,
           senderUserId
         );
-        return res.status(200).json({ success: true, claimTransactionHash });
+        return res.status(200).json({ success: true, refundTransactionHash });
       }
 
       if (action === "auto-claim") {

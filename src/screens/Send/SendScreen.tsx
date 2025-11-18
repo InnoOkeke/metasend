@@ -1,5 +1,7 @@
-import React, { useMemo, useState, useRef } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View, Modal, Pressable, TouchableOpacity, ActivityIndicator, Alert } from "react-native";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { useSendUserOperation } from "@coinbase/cdp-hooks";
@@ -16,6 +18,7 @@ import { useTheme } from "../../providers/ThemeProvider";
 import type { ColorPalette } from "../../utils/theme";
 import { spacing, typography } from "../../utils/theme";
 import { useToast } from "../../utils/toast";
+import type { RootStackParamList } from "../../navigation/RootNavigator";
 
 const FormSchema = z.object({
   email: z.string().email(),
@@ -32,6 +35,7 @@ type FormState = {
 type FieldErrors = Partial<Record<keyof FormState, string>>;
 
 export const SendScreen: React.FC = () => {
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { profile } = useCoinbase();
   const { sendUserOperation, status: sendStatus, error: sendError } = useSendUserOperation();
   const { colors } = useTheme();
@@ -167,25 +171,23 @@ export const SendScreen: React.FC = () => {
     }, 100);
   };
 
-  const handleSubmit = () => {
+  const buildTransferIntent = (): TransferIntent | null => {
     try {
-      Keyboard.dismiss();
-      
       // Basic validation before parsing
       if (!form.email.trim()) {
         setErrors({ email: "Email is required" });
-        return;
+        return null;
       }
       
       if (!form.amount.trim()) {
         setErrors({ amount: "Amount is required" });
-        return;
+        return null;
       }
       
       const amountNumber = parseFloat(form.amount);
       if (isNaN(amountNumber)) {
         setErrors({ amount: "Please enter a valid number" });
-        return;
+        return null;
       }
       
       const parsed = FormSchema.safeParse({
@@ -201,7 +203,7 @@ export const SendScreen: React.FC = () => {
           if (path) fieldErrors[path] = issue.message;
         });
         setErrors(fieldErrors);
-        return;
+        return null;
       }
 
       setErrors({});
@@ -215,14 +217,23 @@ export const SendScreen: React.FC = () => {
         senderName: profile.displayName ?? profile.email ?? undefined,
         senderUserId: profile.userId,
       };
-
-      // Show confirmation modal instead of immediately sending
-      setPendingIntent(payload);
-      setIsConfirmModalVisible(true);
+      return payload;
     } catch (error) {
       console.error("Submit error:", error);
       setErrors({ email: "An error occurred. Please try again." });
+      return null;
     }
+  };
+
+  const handleReviewAndSend = () => {
+    Keyboard.dismiss();
+    const intent = buildTransferIntent();
+    if (!intent) {
+      return;
+    }
+
+    setPendingIntent(intent);
+    setIsConfirmModalVisible(true);
   };
 
   const handleBiometricAuth = async () => {
@@ -295,17 +306,6 @@ export const SendScreen: React.FC = () => {
     setIsAuthenticating(false);
   };
 
-  const statusMessage = (() => {
-    if (!result) return null;
-    if (result.status === "pending_recipient_signup") {
-      return `Invite sent. ${form.email} will receive an email with a redemption code once they create a MetaSend account.`;
-    }
-    if (result.status === "sent") {
-      return `Transfer submitted on Base. Tx hash: ${result.txHash}`;
-    }
-    return null;
-  })();
-
   const recipientInfo = useMemo(() => {
     if (!emailLookup) return null;
     return emailLookup.isRegistered 
@@ -314,7 +314,7 @@ export const SendScreen: React.FC = () => {
   }, [emailLookup]);
 
   return (
-    <>
+    <View style={styles.screen}>
       <KeyboardAvoidingView 
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -379,7 +379,7 @@ export const SendScreen: React.FC = () => {
 
           <PrimaryButton
             title="Review & Send"
-            onPress={handleSubmit}
+            onPress={handleReviewAndSend}
             loading={mutation.isPending || sendStatus === "pending"}
           />
 
@@ -495,12 +495,16 @@ export const SendScreen: React.FC = () => {
         type={toast.type}
         onDismiss={hideToast}
       />
-    </>
+    </View>
   );
 };
 
 const createStyles = (colors: ColorPalette) =>
   StyleSheet.create({
+    screen: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
     container: {
       flexGrow: 1,
       padding: spacing.lg,

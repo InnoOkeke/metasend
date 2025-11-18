@@ -17,7 +17,15 @@ export default ({ config }) => ({
     
     // Ramp Providers
     moonpayApiKey: process.env.MOONPAY_API_KEY || "",
+    moonpaySecretKey: process.env.MOONPAY_SECRET_KEY || "",
+    transakApiKey: process.env.TRANSAK_API_KEY || "",
+    transakSecretKey: process.env.TRANSAK_SECRET_KEY || "",
     paycrestApiKey: process.env.PAYCREST_API_KEY || "",
+    paycrestSecretKey: process.env.PAYCREST_SECRET_KEY || "",
+    alchemyPayApiKey: process.env.ALCHEMY_PAY_API_KEY || "placeholder",
+    mercuryoApiKey: process.env.MERCURYO_API_KEY || "placeholder",
+    payantApiKey: process.env.PAYANT_API_KEY || "placeholder",
+    paybisApiKey: process.env.PAYBIS_API_KEY || "placeholder",
     
     // Email Service
     sendgridApiKey: process.env.SENDGRID_API_KEY || "",
@@ -31,7 +39,7 @@ export default ({ config }) => ({
     supportEmail: process.env.SUPPORT_EMAIL || "support@metasend.io",
     
     // Escrow Configuration
-    escrowMasterKey: process.env.ESCROW_MASTER_KEY || "",
+    escrowMockMode: (process.env.ESCROW_USE_MOCK || "true") !== "false",
     pendingTransferExpiryDays: parseInt(process.env.PENDING_TRANSFER_EXPIRY_DAYS || "7", 10),
     
     // Rate Limits

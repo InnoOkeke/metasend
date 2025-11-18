@@ -49,6 +49,7 @@ export type PendingTransferSummary = {
   transferId: string;
   recipientEmail: string;
   senderName: string;
+  senderEmail?: string;
   amount: string;
   token: string;
   chain: ChainType;
@@ -126,8 +127,10 @@ class PendingTransferService {
             chain: request.chain,
             decimals: request.decimals,
             status: "pending",
-            escrowAddress: "", // Will be filled by backend
-            escrowPrivateKeyEncrypted: "", // Will be filled by backend
+            escrowTransferId: "", // Will be filled by backend
+            escrowTxHash: "", // Will be filled by backend
+            escrowStatus: "pending",
+            recipientHash: "",
             transactionHash: "", // Will be filled by backend
             message: request.message,
             createdAt: now.toISOString(),
@@ -148,36 +151,47 @@ class PendingTransferService {
     const validated = CreatePendingTransferSchema.parse(request);
     console.log(`⏱️ Schema parse: ${Date.now() - startTime}ms`);
 
+    let senderProfile = null;
+    try {
+      senderProfile = await userDirectoryService.getUserProfile(validated.senderUserId);
+    } catch (error) {
+      console.warn("⚠️ Unable to fetch sender profile prior to pending transfer creation", error);
+    }
+
     // Create pending transfer record FIRST (fastest path)
     const transferId = `pending_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const now = new Date();
     const expiresAt = new Date(now.getTime() + this.EXPIRY_DAYS * 24 * 60 * 60 * 1000);
 
-    // Generate escrow wallet synchronously
+    // Create pooled escrow transfer
     const escrowStart = Date.now();
-    const escrow = await escrowService.generateEscrowWallet(validated.chain);
-    console.log(`⏱️ Escrow generation: ${Date.now() - escrowStart}ms`);
-
-    // Get mock deposit hash immediately
-    const depositStart = Date.now();
-    const txHash = `0xDEPOSIT_${Date.now()}_PENDING`;
-    console.log(`⏱️ Escrow deposit: ${Date.now() - depositStart}ms`);
+    const onchainReceipt = await escrowService.createOnchainTransfer({
+      recipientEmail: validated.recipientEmail,
+      amount: validated.amount,
+      decimals: validated.decimals,
+      tokenAddress: validated.tokenAddress,
+      chain: validated.chain,
+      expiry: Math.floor(expiresAt.getTime() / 1000),
+    });
+    console.log(`⏱️ Escrow transfer creation: ${Date.now() - escrowStart}ms`);
 
     const transfer: PendingTransfer = {
       transferId,
       recipientEmail: validated.recipientEmail.toLowerCase(),
       senderUserId: validated.senderUserId,
-      senderEmail: "", // Will be filled by background job
-      senderName: "", // Will be filled by background job
+      senderEmail: senderProfile?.email || "",
+      senderName: senderProfile?.displayName || senderProfile?.email || "",
       amount: validated.amount,
       token: validated.token,
       tokenAddress: validated.tokenAddress,
       chain: validated.chain,
       decimals: validated.decimals,
       status: "pending",
-      escrowAddress: escrow.address,
-      escrowPrivateKeyEncrypted: escrow.privateKeyEncrypted,
-      transactionHash: txHash,
+      escrowTransferId: onchainReceipt.transferId,
+      escrowTxHash: onchainReceipt.txHash,
+      escrowStatus: "pending",
+      recipientHash: onchainReceipt.recipientHash,
+      transactionHash: onchainReceipt.txHash,
       message: validated.message,
       createdAt: now.toISOString(),
       expiresAt: expiresAt.toISOString(),
@@ -189,44 +203,45 @@ class PendingTransferService {
     console.log(`⏱️ Total createPendingTransfer: ${Date.now() - startTime}ms`);
 
     // Get sender details and send emails in background (fire-and-forget)
-    Promise.all([
-      userDirectoryService.getUserProfile(validated.senderUserId),
-    ]).then(([sender]) => {
+    (senderProfile ? Promise.resolve(senderProfile) : userDirectoryService.getUserProfile(validated.senderUserId))
+      .then((sender) => {
       if (!sender) {
         console.warn("⚠️ Sender not found for background processing");
         return;
       }
 
       // Send invite email (fire-and-forget)
-      return Promise.allSettled([
-        emailNotificationService.sendInviteWithPendingTransfer(
-          validated.recipientEmail,
-          sender.displayName || sender.email,
-          sender.email,
-          validated.amount,
-          validated.token,
-          transferId
-        ),
-        emailNotificationService.sendTransferConfirmation(
-          sender.email,
-          sender.displayName || sender.email,
-          validated.recipientEmail,
-          validated.amount,
-          validated.token,
-          "pending"
-        ),
-      ]);
-    }).then((results) => {
-      if (results) {
-        results.forEach((result, index) => {
-          if (result.status === "fulfilled") {
-            console.log(index === 0 ? "📨 Invite email sent" : "📨 Sender confirmation sent");
-          } else {
-            console.warn("⚠️ Email notification failed:", result.reason);
-          }
-        });
-      }
-    }).catch((error) => console.warn("⚠️ Background processing failed:", error));
+        return Promise.allSettled([
+          emailNotificationService.sendInviteWithPendingTransfer(
+            validated.recipientEmail,
+            sender.displayName || sender.email,
+            sender.email,
+            validated.amount,
+            validated.token,
+            transferId
+          ),
+          emailNotificationService.sendTransferConfirmation(
+            sender.email,
+            sender.displayName || sender.email,
+            validated.recipientEmail,
+            validated.amount,
+            validated.token,
+            "pending"
+          ),
+        ]);
+      })
+      .then((results) => {
+        if (results) {
+          results.forEach((result, index) => {
+            if (result.status === "fulfilled") {
+              console.log(index === 0 ? "📨 Invite email sent" : "📨 Sender confirmation sent");
+            } else {
+              console.warn("⚠️ Email notification failed:", result.reason);
+            }
+          });
+        }
+      })
+      .catch((error) => console.warn("⚠️ Background processing failed:", error));
 
     return transfer;
   }
@@ -248,6 +263,7 @@ class PendingTransferService {
       transferId: transfer.transferId,
       recipientEmail: transfer.recipientEmail,
       senderName: transfer.senderName || transfer.senderEmail,
+      senderEmail: transfer.senderEmail,
       amount: transfer.amount,
       token: transfer.token,
       chain: transfer.chain,
@@ -277,6 +293,7 @@ class PendingTransferService {
         transferId: transfer.transferId,
         recipientEmail: transfer.recipientEmail,
         senderName: transfer.senderName || transfer.senderEmail,
+        senderEmail: transfer.senderEmail,
         amount: transfer.amount,
         token: transfer.token,
         chain: transfer.chain,
@@ -341,22 +358,24 @@ class PendingTransferService {
       throw new Error(`You don't have a ${transfer.chain} wallet configured`);
     }
 
-    // Transfer from escrow to recipient
-    console.log(`[PendingTransferService] Transferring from escrow to ${recipientWallet}`);
+    const escrowTransferId = transfer.escrowTransferId;
+    if (!escrowTransferId) {
+      throw new Error("Transfer is not yet registered on shared escrow. Please contact support.");
+    }
+
+    console.log(`[PendingTransferService] Claiming shared escrow transfer ${escrowTransferId}`);
     let claimTxHash: string;
     try {
-      claimTxHash = await escrowService.transferFromEscrow(
-        transfer.escrowAddress,
-        transfer.escrowPrivateKeyEncrypted,
+      const receipt = await escrowService.claimOnchainTransfer(
+        escrowTransferId,
         recipientWallet,
-        transfer.amount,
-        transfer.tokenAddress,
-        transfer.chain
+        transfer.recipientEmail
       );
-      console.log(`[PendingTransferService] Transfer successful, txHash: ${claimTxHash}`);
+      claimTxHash = receipt.txHash;
+      console.log(`[PendingTransferService] Claim UserOp sent, hash: ${claimTxHash}`);
     } catch (error) {
-      console.error(`[PendingTransferService] Escrow transfer failed:`, error);
-      throw new Error(`Failed to transfer from escrow: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error(`[PendingTransferService] Shared escrow claim failed:`, error);
+      throw new Error(`Failed to submit claim: ${error instanceof Error ? error.message : "Unknown error"}`);
     }
 
     // Update transfer status only after successful blockchain transaction
@@ -366,6 +385,9 @@ class PendingTransferService {
       claimedAt: new Date().toISOString(),
       claimedByUserId: claimantUserId,
       claimTransactionHash: claimTxHash,
+      escrowStatus: "claimed",
+      escrowTxHash: claimTxHash,
+      recipientWallet,
     });
 
     // Notify sender
@@ -388,7 +410,7 @@ class PendingTransferService {
    */
   async cancelPendingTransfer(transferId: string, senderUserId: string): Promise<string> {
     if (this.useRemoteApi) {
-      const result = await this.request<{ success: boolean; claimTransactionHash: string }>(
+      const result = await this.request<{ success: boolean; refundTransactionHash: string }>(
         "/api/pending-transfers",
         {
           method: "PATCH",
@@ -399,7 +421,7 @@ class PendingTransferService {
           }),
         }
       );
-      return result.claimTransactionHash;
+      return result.refundTransactionHash;
     }
 
     const transfer = await mongoDatabase.getPendingTransferById(transferId);
@@ -422,20 +444,20 @@ class PendingTransferService {
       throw new Error("Sender wallet not found");
     }
 
-    // Return funds from escrow to sender
-    const returnTxHash = await escrowService.returnFromEscrow(
-      transfer.escrowAddress,
-      transfer.escrowPrivateKeyEncrypted,
-      senderWallet,
-      transfer.amount,
-      transfer.tokenAddress,
-      transfer.chain
-    );
+    const escrowTransferId = transfer.escrowTransferId;
+    if (!escrowTransferId) {
+      throw new Error("Transfer is not yet registered on shared escrow. Please contact support.");
+    }
+
+    const refundReceipt = await escrowService.refundOnchainTransfer(escrowTransferId, senderWallet);
+    const returnTxHash = refundReceipt.txHash;
 
     // Update transfer status
     await mongoDatabase.updatePendingTransfer(transferId, {
       status: "cancelled",
       claimTransactionHash: returnTxHash,
+      escrowStatus: "refunded",
+      escrowTxHash: returnTxHash,
     });
 
     return returnTxHash;
@@ -457,20 +479,23 @@ class PendingTransferService {
           continue;
         }
 
-        // Return funds from escrow to sender
-        const returnTxHash = await escrowService.returnFromEscrow(
-          transfer.escrowAddress,
-          transfer.escrowPrivateKeyEncrypted,
-          senderWallet,
-          transfer.amount,
-          transfer.tokenAddress,
-          transfer.chain
+        if (!transfer.escrowTransferId) {
+          console.error(`Transfer ${transfer.transferId} missing escrowTransferId for expiry processing`);
+          continue;
+        }
+
+        const refundReceipt = await escrowService.refundOnchainTransfer(
+          transfer.escrowTransferId,
+          senderWallet
         );
+        const returnTxHash = refundReceipt.txHash;
 
         // Update transfer status
         await mongoDatabase.updatePendingTransfer(transfer.transferId, {
           status: "expired",
           claimTransactionHash: returnTxHash,
+          escrowStatus: "expired",
+          escrowTxHash: returnTxHash,
         });
 
         // Notify sender

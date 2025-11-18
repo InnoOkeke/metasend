@@ -7,10 +7,10 @@ MetaSend is an Expo React Native application that lets users send USDC to any em
 - **Coinbase Smart Wallet Authentication:** Secure OAuth flow with session caching
 - **Email-Based Transfers:** Send USDC to any email address, even non-registered users
 - **Pending Transfer System:** 
-  - Escrow wallets for unregistered recipients
-  - Auto-claim on signup
-  - 7-day expiry with automatic refunds
-  - Email notifications at every stage
+   - Shared on-chain escrow contract for unregistered recipients
+   - Gasless UserOps via Coinbase smart wallet + paymaster
+   - Auto-claim on signup and 7-day expiry with automatic refunds
+   - Email notifications at every stage
 - **Gasless Transactions:** Coinbase Paymaster integration for sponsored transfers
 - **Multi-Chain Support:** Ready for EVM, Solana, and Tron networks
 - **Contact Management:** Recent recipients, favorites, and search
@@ -22,7 +22,7 @@ MetaSend is an Expo React Native application that lets users send USDC to any em
 ### Core Services
 
 - **UserDirectoryService:** User lookup, registration, wallet resolution
-- **EscrowService:** Temporary wallet generation for pending transfers
+- **EscrowService:** Shared escrow contract driver (Coinbase Smart Wallet + UserOps)
 - **PendingTransferService:** Create, claim, cancel, and expire pending transfers
 - **UnifiedSendService:** Orchestration layer for all send operations
 - **EmailNotificationService:** Transactional email templates (invite, reminder, expiry, claim)
@@ -96,6 +96,18 @@ Choose one email provider and set its API key:
 | `AWS_SES_ACCESS_KEY` | AWS SES access key |
 | `AWS_SES_SECRET_KEY` | AWS SES secret key |
 
+### International Provider Keys
+
+| Variable | Description |
+| --- | --- |
+| `MOONPAY_API_KEY` / `MOONPAY_SECRET_KEY` | MoonPay sell-quote API credentials |
+| `TRANSAK_API_KEY` / `TRANSAK_SECRET_KEY` | Transak pricing API + optional secret |
+| `PAYCREST_API_KEY` / `PAYCREST_SECRET_KEY` | Paycrest rates API credentials |
+| `ALCHEMY_PAY_API_KEY` | Alchemy Pay connector key (optional) |
+| `MERCURYO_API_KEY` | Mercuryo API key (optional) |
+| `PAYANT_API_KEY` | Payant API key (optional) |
+| `PAYBIS_API_KEY` | Paybis API key (optional) |
+
 ### App Configuration
 
 | Variable | Description |
@@ -107,7 +119,14 @@ Choose one email provider and set its API key:
 
 | Variable | Description |
 | --- | --- |
-| `ESCROW_MASTER_KEY` | Master encryption key for escrow wallet private keys (generate a secure random string) |
+| `ESCROW_CONTRACT_ADDRESS` | Deployed `SharedEscrow.sol` contract address (Base or Base Sepolia) |
+| `ESCROW_TREASURY_WALLET` | Coinbase smart account that funds pooled transfers |
+| `ESCROW_TOKEN_ADDRESS` | (Optional) Override ERC-20 token address (defaults to USDC) |
+| `ESCROW_NETWORK` | `base` or `base-sepolia` to select deployment network |
+| `ESCROW_RPC_URL` | Custom RPC endpoint for read operations (defaults to chain RPC) |
+| `ESCROW_SALT_VERSION` | Salt for deterministic transfer IDs (default `MS_ESCROW_V1`) |
+| `ESCROW_USE_MOCK` | Set to `true` to disable on-chain calls in local/dev builds |
+| `PAYMASTER_URL` | Coinbase paymaster URL if overriding default `PAYMASTER_API_URL` |
 | `PENDING_TRANSFER_EXPIRY_DAYS` | Days before pending transfers expire (default: 7) |
 
 ### Rate Limits
@@ -158,42 +177,38 @@ src/
   utils/               # Formatting helpers & theming
 ```
 
+## Operational Scripts
+
+| Command | Purpose |
+| --- | --- |
+| `npm run migrate:pending-transfers` | Backfill legacy pending transfers into the shared escrow contract (supports `--dry-run`, `--limit`, `--transferId`, `--resumeFrom`). |
+
 ## Next Steps
 
 ### Production Deployment
 
-1. **Blockchain Integration:**
-   - Replace mock blockchain calls in `EscrowService.ts` with real implementations
-   - Use ethers.js or viem for EVM chains
-   - Use @solana/web3.js for Solana
-   - Use TronWeb for Tron
+1. **Shared Escrow Monitoring:**
+   - Subscribe to `SharedEscrow` events or poll `getTransfer` to keep `escrowStatus` + `lastChainSyncAt` fresh.
+   - Alert if on-chain status diverges from Mongo for more than one hour.
 
-2. **Email Service Integration:**
-   - Choose SendGrid, Resend, or AWS SES
-   - Add API key to `.env`
-   - Update `EmailNotificationService.ts` to use the provider (examples provided in code)
+2. **Cron Hardening:**
+   - Wire `api/cron/process-expiry` and `send-reminders` to the new `escrowService` helpers.
+   - Add retries/backoff around Coinbase UserOps + paymaster responses.
 
-3. **Database Setup:**
-   - Replace `InMemoryDatabase` with production database
-   - All services use the database abstraction layer
-   - Types are defined in `src/types/database.ts`
+3. **Data Migration:**
+   - Run `npm run migrate:pending-transfers -- --dry-run` and then without `--dry-run` in each environment.
+   - Remove legacy escrow columns once all rows have `escrowTransferId`.
 
-4. **Security:**
-   - Generate a strong `ESCROW_MASTER_KEY` for production
-   - Consider using AWS KMS or Google Cloud KMS for key management
-   - Enable rate limiting on API endpoints
+4. **Multi-Chain + Token Support:**
+   - Extend `SharedEscrowDriver` to parameterize ERC-20 addresses and future Solana/Tron drivers.
+   - Add UI configuration for selecting network/token per transfer.
 
-5. **Background Tasks:**
-   - Deploy `BackgroundTaskService` to a serverless function (AWS Lambda, Vercel Functions)
-   - Set up cron jobs for:
-     - Expiry processing (hourly)
-     - Reminder emails (every 6 hours)
+5. **Testing:**
+   - `npx hardhat test` for contract coverage.
+   - `npx tsc --noEmit` and `npm run server:build` for backend health.
+   - Expo smoke tests for send/claim/cancel flows (registered + pending recipients).
 
-6. **Testing:**
-   - Test full send flow: registered → registered
-   - Test pending flow: registered → unregistered → claim
-   - Test expiry flow: pending → expired → refund
-   - Test email notifications at each stage
+➡️ **Render backend?** Follow `docs/render-deployment.md` for service provisioning and `docs/migrations/shared-escrow.md` for the step-by-step migration runbook.
 
 ### Development Workflow
 

@@ -69,7 +69,7 @@ class InvoiceService {
       clientEmail: validated.clientEmail,
       clientName: validated.clientName,
       clientAddress: validated.clientAddress,
-      items: validated.items,
+      items: validated.items as InvoiceItem[],
       subtotal: validated.subtotal,
       tax: validated.tax,
       taxRate: validated.taxRate,

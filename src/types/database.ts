@@ -42,9 +42,17 @@ export type PendingTransfer = {
   status: PendingTransferStatus;
 
   // Escrow wallet (holds funds)
-  escrowAddress: string;
-  escrowPrivateKeyEncrypted: string;
-  transactionHash: string; // Initial deposit tx
+  escrowAddress?: string;
+  escrowPrivateKeyEncrypted?: string;
+  transactionHash?: string; // Deprecated legacy field
+
+  // Shared escrow metadata
+  escrowTransferId?: string;
+  escrowTxHash?: string;
+  escrowStatus?: "pending" | "claimed" | "refunded" | "expired";
+  recipientHash?: string;
+  recipientWallet?: string;
+  lastChainSyncAt?: string;
 
   // Metadata
   message?: string;

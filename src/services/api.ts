@@ -7,15 +7,20 @@
 
 import Constants from "expo-constants";
 
-const API_BASE_URL = Constants.expoConfig?.extra?.METASEND_API_BASE_URL;
-const API_KEY = Constants.expoConfig?.extra?.METASEND_API_KEY;
+const API_BASE_URL = Constants.expoConfig?.extra?.metasendApiBaseUrl;
+const API_KEY = Constants.expoConfig?.extra?.metasendApiKey;
+
+console.log("🔧 API Configuration:", {
+  baseUrl: API_BASE_URL,
+  hasApiKey: !!API_KEY,
+});
 
 if (!API_BASE_URL) {
-  console.warn("⚠️ METASEND_API_BASE_URL not configured");
+  console.error("❌ METASEND_API_BASE_URL not configured");
 }
 
 if (!API_KEY) {
-  console.warn("⚠️ METASEND_API_KEY not configured");
+  console.error("❌ METASEND_API_KEY not configured");
 }
 
 interface ApiResponse<T> {
@@ -39,25 +44,34 @@ async function apiRequest<T>(
     ...options.headers,
   };
 
+  console.log(`📡 API Request: ${endpoint}`, { url, method: options.method || 'GET' });
+  
   try {
     const response = await fetch(url, {
       ...options,
       headers,
     });
 
+    console.log(`📡 API Response: ${endpoint}`, { status: response.status, ok: response.ok });
+
     const data = await response.json();
 
     if (!response.ok) {
+      console.error(`❌ API error response [${endpoint}]:`, data);
       throw new Error(data.error || `API error: ${response.status}`);
     }
 
     if (!data.success) {
+      console.error(`❌ API failed response [${endpoint}]:`, data);
       throw new Error(data.error || "API request failed");
     }
 
     return data as T;
   } catch (error) {
     console.error(`❌ API request failed [${endpoint}]:`, error);
+    if (error instanceof TypeError && error.message === 'Network request failed') {
+      console.error('💡 Check: 1) Is device connected to internet? 2) Is API_BASE_URL correct? 3) Is backend running?');
+    }
     throw error;
   }
 }
@@ -319,7 +333,11 @@ export async function createPendingTransfer(
   // The actual transfer object might not be available immediately
   return response.transfer || {
     transferId: `pending_${Date.now()}`,
-    ...params,
+    senderEmail: '', // Will be filled by backend
+    senderUserId: params.senderUserId,
+    recipientEmail: params.recipientEmail,
+    amount: params.amount,
+    message: params.message,
     status: "pending" as const,
     createdAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),

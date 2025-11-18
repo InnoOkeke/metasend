@@ -6,6 +6,16 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import mongoDb from "../src/services/mongoDatabase";
 
+const GIFT_THEMES: Record<string, { emoji: string; background: string; primary: string; accent: string }> = {
+  birthday: { emoji: "🎂", background: "#FEF3C7", primary: "#F59E0B", accent: "#B45309" },
+  anniversary: { emoji: "💝", background: "#FCE7F3", primary: "#EC4899", accent: "#BE185D" },
+  holiday: { emoji: "🎄", background: "#D1FAE5", primary: "#10B981", accent: "#047857" },
+  thank_you: { emoji: "🙏", background: "#E0E7FF", primary: "#6366F1", accent: "#4338CA" },
+  congratulations: { emoji: "🎉", background: "#DBEAFE", primary: "#3B82F6", accent: "#1D4ED8" },
+  red_envelope: { emoji: "🧧", background: "#FEE2E2", primary: "#DC2626", accent: "#B91C1C" },
+  custom: { emoji: "🎁", background: "#F3E8FF", primary: "#A855F7", accent: "#7C3AED" },
+};
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const path = req.url || "";
   
@@ -20,6 +30,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return handlePayment(requestId, res);
   }
   
+  if (path.startsWith("/gift/")) {
+    const giftId = path.replace("/gift/", "").split("?")[0];
+    return handleGift(giftId, res);
+  }
+
   if (path.startsWith("/tip/")) {
     const jarId = path.replace("/tip/", "").split("?")[0];
     return handleTip(jarId, res);
@@ -80,6 +95,39 @@ async function handlePayment(requestId: string, res: VercelResponse) {
     return res.status(200).send(getPaymentPage(request, deepLink));
   } catch (error) {
     console.error("Payment error:", error);
+    return res.status(500).send(getErrorPage("Internal server error"));
+  }
+}
+
+async function handleGift(giftId: string, res: VercelResponse) {
+  if (!giftId) {
+    return res.status(400).send(getErrorPage("Invalid gift link"));
+  }
+
+  try {
+    const gift = await mongoDb.getGiftById(giftId);
+
+    if (!gift) {
+      return res.status(404).send(getErrorPage("Gift not found"));
+    }
+
+    if (gift.status === "claimed") {
+      return res.status(200).send(getInfoPage("Gift already claimed", "Looks like this gift has already been claimed. 🎉"));
+    }
+
+    if (gift.status === "cancelled") {
+      return res.status(400).send(getErrorPage("This gift was cancelled by the sender"));
+    }
+
+    if (gift.status === "expired") {
+      return res.status(400).send(getErrorPage("This gift has expired"));
+    }
+
+    const theme = GIFT_THEMES[gift.theme] || GIFT_THEMES.custom;
+    const deepLink = `metasend://gift/${giftId}`;
+    return res.status(200).send(getGiftPage(gift, deepLink, theme));
+  } catch (error) {
+    console.error("Gift error:", error);
     return res.status(500).send(getErrorPage("Internal server error"));
   }
 }
@@ -165,14 +213,6 @@ function getClaimPage(transfer: any, deepLink: string) {
         .expires { margin-top: 20px; color: #e53e3e; font-size: 14px; }
         .footer { margin-top: 30px; color: #718096; font-size: 14px; }
       </style>
-      <script>
-        window.onload = function() {
-          const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-          if (isMobile) {
-            window.location.href = '${deepLink}';
-          }
-        };
-      </script>
     </head>
     <body>
       <div class="container">
@@ -250,12 +290,6 @@ function getPaymentPage(request: any, deepLink: string) {
         }
         .footer { margin-top: 30px; color: #718096; font-size: 14px; }
       </style>
-      <script>
-        window.onload = function() {
-          const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-          if (isMobile) { window.location.href = '${deepLink}'; }
-        };
-      </script>
     </head>
     <body>
       <div class="container">
@@ -327,12 +361,6 @@ function getTipPage(jar: any, deepLink: string) {
         }
         .footer { margin-top: 30px; color: #718096; font-size: 14px; }
       </style>
-      <script>
-        window.onload = function() {
-          const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-          if (isMobile) { window.location.href = '${deepLink}'; }
-        };
-      </script>
     </head>
     <body>
       <div class="container">
@@ -346,6 +374,127 @@ function getTipPage(jar: any, deepLink: string) {
         </div>
         <a href="${deepLink}" class="button">Send a Tip 🎁</a>
         <div class="footer">Powered by <strong>MetaSend</strong></div>
+      </div>
+    </body>
+    </html>
+  `;
+}
+
+function getGiftPage(
+  gift: any,
+  deepLink: string,
+  theme: { emoji: string; background: string; primary: string; accent: string }
+) {
+  return `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>${theme.emoji} Claim your gift - MetaSend</title>
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+          background: ${theme.background};
+          min-height: 100vh;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+        }
+        .container {
+          background: white;
+          border-radius: 24px;
+          padding: 40px;
+          max-width: 520px;
+          width: 100%;
+          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+          text-align: center;
+          border: 4px solid ${theme.primary};
+        }
+        .emoji { font-size: 72px; margin-bottom: 20px; }
+        h1 { font-size: 32px; color: #1a202c; margin-bottom: 10px; }
+        .amount { font-size: 48px; font-weight: bold; color: ${theme.primary}; margin: 20px 0; }
+        .sender { font-size: 18px; color: #4a5568; margin-bottom: 20px; }
+        .message {
+          background: ${theme.background};
+          padding: 20px;
+          border-radius: 12px;
+          margin: 20px 0;
+          color: #2d3748;
+          border-left: 4px solid ${theme.primary};
+          font-style: italic;
+        }
+        .button {
+          display: inline-block;
+          background: linear-gradient(135deg, ${theme.primary} 0%, ${theme.accent} 100%);
+          color: white;
+          padding: 16px 40px;
+          border-radius: 12px;
+          text-decoration: none;
+          font-weight: 600;
+          font-size: 18px;
+          margin: 20px 0;
+        }
+        .footer { margin-top: 20px; color: #718096; font-size: 14px; }
+        .note { margin-top: 10px; font-size: 13px; color: #4a5568; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="emoji">${theme.emoji}</div>
+        <h1>${gift.recipientName ? `${gift.recipientName},` : ""} you have a gift!</h1>
+        <div class="amount">${gift.amount} ${gift.token}</div>
+        <div class="sender">from ${gift.senderName || gift.senderEmail}</div>
+        ${gift.message ? `<div class="message">"${gift.message}"</div>` : ""}
+        <a href="${deepLink}" class="button">Open MetaSend App</a>
+        <p class="note">Need the app? Search "MetaSend" in your app store.</p>
+        <div class="footer">Powered by <strong>MetaSend</strong></div>
+      </div>
+    </body>
+    </html>
+  `;
+}
+
+function getInfoPage(title: string, message: string, emoji = "ℹ️") {
+  return `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>${title} - MetaSend</title>
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+          background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+          min-height: 100vh;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+        }
+        .container {
+          background: white;
+          border-radius: 24px;
+          padding: 40px;
+          max-width: 500px;
+          width: 100%;
+          text-align: center;
+          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+        .icon { font-size: 64px; margin-bottom: 20px; }
+        h1 { font-size: 28px; color: #1a202c; margin-bottom: 10px; }
+        p { color: #4a5568; font-size: 16px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="icon">${emoji}</div>
+        <h1>${title}</h1>
+        <p>${message}</p>
       </div>
     </body>
     </html>

@@ -6,6 +6,17 @@
 import { z } from "zod";
 import { TipJar, Tip, TipJarStatus, ChainType } from "../types/database";
 
+declare const require: any;
+
+const getApiBaseUrl = () => {
+  try {
+    const Constants = require("expo-constants").default;
+    return Constants?.expoConfig?.extra?.metasendApiBaseUrl || process.env.METASEND_API_BASE_URL || "https://metasend.vercel.app";
+  } catch (_error) {
+    return process.env.METASEND_API_BASE_URL || "https://metasend.vercel.app";
+  }
+};
+
 export const CreateTipJarSchema = z.object({
   title: z.string().min(1).max(100),
   description: z.string().max(500).optional(),
@@ -50,6 +61,8 @@ export type TipSummary = {
 };
 
 class TippingService {
+  private readonly apiBaseUrl = getApiBaseUrl();
+
   /**
    * Create a new tip jar
    */
@@ -61,46 +74,46 @@ class TippingService {
     input: CreateTipJarInput
   ): Promise<TipJar> {
     const validated = CreateTipJarSchema.parse(input);
-    
-    const now = new Date();
 
-    const jar: TipJar = {
-      jarId: `jar_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      creatorUserId,
-      creatorEmail,
-      creatorName,
-      creatorAvatar,
-      title: validated.title,
-      description: validated.description,
-      suggestedAmounts: validated.suggestedAmounts,
-      acceptedTokens: validated.acceptedTokens as TipJar["acceptedTokens"],
-      status: "active",
-      totalTipsReceived: 0,
-      tipCount: 0,
-      createdAt: now.toISOString(),
-      updatedAt: now.toISOString(),
-    };
+    const response = await fetch(`${this.apiBaseUrl}/api/tips?action=create-jar`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        creatorUserId,
+        creatorEmail,
+        creatorName,
+        creatorAvatar,
+        ...validated,
+      }),
+    });
 
-    // TODO: Save to database
-    console.log("🎁 Tip jar created:", jar);
+    if (!response.ok) {
+      throw new Error("Failed to create tip jar");
+    }
 
-    return jar;
+    return await response.json();
   }
 
   /**
    * Get tip jar by ID
    */
   async getTipJar(jarId: string): Promise<TipJar | null> {
-    // TODO: Fetch from database
-    return null;
+    const response = await fetch(`${this.apiBaseUrl}/api/tips?jarId=${jarId}`);
+    if (!response.ok) {
+      return null;
+    }
+    return await response.json();
   }
 
   /**
    * Get tip jars created by user
    */
   async getMyTipJars(userId: string): Promise<TipJarSummary[]> {
-    // TODO: Fetch from database
-    return [];
+    const response = await fetch(`${this.apiBaseUrl}/api/tips?creatorUserId=${userId}`);
+    if (!response.ok) {
+      return [];
+    }
+    return await response.json();
   }
 
   /**
@@ -114,45 +127,54 @@ class TippingService {
     transactionHash: string
   ): Promise<Tip> {
     const validated = SendTipSchema.parse(input);
-    
-    const tip: Tip = {
-      tipId: `tip_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      jarId: validated.jarId,
-      tipperUserId: validated.isAnonymous ? undefined : tipperUserId,
-      tipperEmail: validated.isAnonymous ? undefined : tipperEmail,
-      tipperName: validated.isAnonymous ? undefined : tipperName,
-      isAnonymous: validated.isAnonymous,
-      amount: validated.amount,
-      token: validated.token,
-      chain: validated.chain,
-      message: validated.message,
-      transactionHash,
-      createdAt: new Date().toISOString(),
-    };
 
-    // TODO: Save to database
-    // TODO: Update tip jar stats
-    // TODO: Send notification to creator
-    console.log("💸 Tip sent:", tip);
+    const response = await fetch(`${this.apiBaseUrl}/api/tips?action=send-tip`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jarId: validated.jarId,
+        tipperUserId: validated.isAnonymous ? undefined : tipperUserId,
+        tipperEmail: validated.isAnonymous ? undefined : tipperEmail,
+        tipperName: validated.isAnonymous ? undefined : tipperName,
+        isAnonymous: validated.isAnonymous,
+        amount: validated.amount,
+        token: validated.token,
+        chain: validated.chain,
+        message: validated.message,
+        transactionHash,
+      }),
+    });
 
-    return tip;
+    if (!response.ok) {
+      throw new Error("Failed to send tip");
+    }
+
+    return await response.json();
   }
 
   /**
    * Get tips received in a jar
    */
   async getTipsForJar(jarId: string, limit = 50): Promise<TipSummary[]> {
-    // TODO: Fetch from database
-    return [];
+    const response = await fetch(`${this.apiBaseUrl}/api/tips?jarId=${jarId}&type=tips`);
+    if (!response.ok) {
+      return [];
+    }
+    const tips: TipSummary[] = await response.json();
+    return tips.slice(0, limit);
   }
 
   /**
    * Update tip jar status
    */
   async updateTipJarStatus(jarId: string, userId: string, status: TipJarStatus): Promise<void> {
-    // TODO: Verify user is creator
-    // TODO: Update database
-    console.log("📝 Tip jar status updated:", jarId, status);
+    const response = await fetch(`${this.apiBaseUrl}/api/tips?jarId=${jarId}&status=${status}`, {
+      method: "PATCH",
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to update tip jar status");
+    }
   }
 
   /**

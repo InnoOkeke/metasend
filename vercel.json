@@ -19,7 +19,19 @@
       "destination": "/api/web"
     },
     {
+      "source": "/gift/:giftId",
+      "destination": "/api/web"
+    },
+    {
+      "source": "/gifts/:giftId",
+      "destination": "/api/web"
+    },
+    {
       "source": "/tip/:jarId",
+      "destination": "/api/web"
+    },
+    {
+      "source": "/tipjar/:jarId",
       "destination": "/api/web"
     }
   ],

@@ -5,6 +5,18 @@
 
 import { z } from "zod";
 import { CryptoGift, GiftTheme, GiftStatus, ChainType } from "../types/database";
+import { emailNotificationService } from "./EmailNotificationService";
+
+declare const require: any;
+
+const getApiBaseUrl = () => {
+  try {
+    const Constants = require("expo-constants").default;
+    return Constants?.expoConfig?.extra?.metasendApiBaseUrl || process.env.METASEND_API_BASE_URL || "https://metasend.vercel.app";
+  } catch (_error) {
+    return process.env.METASEND_API_BASE_URL || "https://metasend.vercel.app";
+  }
+};
 
 export const CreateGiftSchema = z.object({
   recipientEmail: z.string().email(),
@@ -42,6 +54,7 @@ export type GiftThemeConfig = {
 };
 
 class CryptoGiftService {
+  private readonly apiBaseUrl = getApiBaseUrl();
   private readonly GIFT_THEMES: Record<GiftTheme, GiftThemeConfig> = {
     birthday: {
       theme: "birthday",
@@ -117,30 +130,31 @@ class CryptoGiftService {
       ? new Date(now.getTime() + validated.expiresInDays * 24 * 60 * 60 * 1000)
       : undefined;
 
-    const gift: CryptoGift = {
-      giftId: `gift_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      senderUserId,
-      senderEmail,
-      senderName,
-      recipientEmail: validated.recipientEmail.toLowerCase().trim(),
-      recipientName: validated.recipientName,
-      amount: validated.amount,
-      token: validated.token,
-      chain: validated.chain,
-      theme: validated.theme,
-      message: validated.message,
-      status: "pending",
-      createdAt: now.toISOString(),
-      expiresAt: expiresAt?.toISOString(),
-    };
+    const response = await fetch(`${this.apiBaseUrl}/api/gifts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        senderUserId,
+        senderEmail,
+        senderName,
+        recipientEmail: validated.recipientEmail.toLowerCase().trim(),
+        recipientName: validated.recipientName,
+        amount: validated.amount,
+        token: validated.token,
+        chain: validated.chain,
+        theme: validated.theme,
+        message: validated.message,
+        expiresInDays: validated.expiresInDays,
+      }),
+    });
 
-    // TODO: Generate escrow wallet for gift
-    // TODO: Transfer funds to escrow
-    // TODO: Save to database
-    console.log("🎁 Gift created:", gift);
+    if (!response.ok) {
+      throw new Error("Failed to create crypto gift");
+    }
 
-    // TODO: Send email notification to recipient
-    await this.sendGiftEmail(gift);
+    const gift: CryptoGift = await response.json();
+
+    await this.sendGiftEmail(gift, senderName || senderEmail);
 
     return gift;
   }
@@ -149,24 +163,33 @@ class CryptoGiftService {
    * Get gift by ID
    */
   async getGift(giftId: string): Promise<CryptoGift | null> {
-    // TODO: Fetch from database
-    return null;
+    const response = await fetch(`${this.apiBaseUrl}/api/gifts?giftId=${giftId}`);
+    if (!response.ok) {
+      return null;
+    }
+    return await response.json();
   }
 
   /**
    * Get gifts sent by user
    */
   async getSentGifts(userId: string): Promise<GiftSummary[]> {
-    // TODO: Fetch from database
-    return [];
+    const response = await fetch(`${this.apiBaseUrl}/api/gifts?senderUserId=${userId}`);
+    if (!response.ok) {
+      return [];
+    }
+    return await response.json();
   }
 
   /**
    * Get gifts received by email
    */
   async getReceivedGifts(email: string): Promise<GiftSummary[]> {
-    // TODO: Fetch from database
-    return [];
+    const response = await fetch(`${this.apiBaseUrl}/api/gifts?recipientEmail=${encodeURIComponent(email)}`);
+    if (!response.ok) {
+      return [];
+    }
+    return await response.json();
   }
 
   /**
@@ -175,27 +198,38 @@ class CryptoGiftService {
   async claimGift(
     giftId: string,
     claimantUserId: string,
-    claimantEmail: string
+    claimantEmail: string,
+    claimTransactionHash: string
   ): Promise<string> {
-    // TODO: Verify claimant email matches recipient
-    // TODO: Check if gift is still valid (not expired/claimed)
-    // TODO: Transfer from escrow to claimant's wallet
-    // TODO: Update gift status
-    // TODO: Send confirmation emails
-    console.log("✅ Gift claimed:", giftId);
-    
-    return "0x..."; // transaction hash
+    const response = await fetch(`${this.apiBaseUrl}/api/gifts?giftId=${giftId}&action=claim`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        giftId,
+        recipientUserId: claimantUserId,
+        claimTransactionHash,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to claim gift");
+    }
+
+    const updated: CryptoGift = await response.json();
+    return updated.claimTransactionHash || claimTransactionHash;
   }
 
   /**
    * Cancel a gift (sender only, if unclaimed)
    */
   async cancelGift(giftId: string, userId: string): Promise<void> {
-    // TODO: Verify user is sender
-    // TODO: Verify gift is unclaimed
-    // TODO: Return funds from escrow to sender
-    // TODO: Update gift status
-    console.log("❌ Gift cancelled:", giftId);
+    const response = await fetch(`${this.apiBaseUrl}/api/gifts?giftId=${giftId}&action=cancel`, {
+      method: "PATCH",
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to cancel gift");
+    }
   }
 
   /**
@@ -213,10 +247,20 @@ class CryptoGiftService {
   /**
    * Send gift email notification
    */
-  private async sendGiftEmail(gift: CryptoGift): Promise<void> {
-    const themeConfig = this.GIFT_THEMES[gift.theme];
-    // TODO: Integrate with EmailNotificationService
-    console.log(`📧 Sending ${themeConfig.emoji} gift email to:`, gift.recipientEmail);
+  private async sendGiftEmail(gift: CryptoGift, senderName: string): Promise<void> {
+    try {
+      await emailNotificationService.sendGiftNotification(
+        gift.recipientEmail,
+        senderName,
+        gift.amount,
+        gift.token,
+        gift.theme,
+        gift.message,
+        gift.giftId,
+      );
+    } catch (error) {
+      console.warn("⚠️ Failed to send gift notification", error);
+    }
   }
 
   /**

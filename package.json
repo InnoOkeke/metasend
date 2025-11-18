@@ -13,7 +13,7 @@
     "server:dev": "ts-node -P tsconfig.server.json server.ts",
     "server:build": "tsc -p tsconfig.server.json --noEmitOnError false || exit 0",
     "server:start": "node dist/server.js",
-    "migrate:pending-transfers": "ts-node scripts/migrate-shared-escrow.ts",
+    "migrate:pending-transfers": "ts-node --project tsconfig.server.json scripts/migrate-shared-escrow.ts",
     "contracts:compile": "hardhat compile",
     "contracts:test": "hardhat test",
     "contracts:deploy:local": "hardhat run scripts/deploy-shared-escrow.ts --network hardhat"

@@ -1,14 +1,15 @@
 import { CdpClient } from "@coinbase/cdp-sdk";
 import { Hex, createPublicClient, encodeAbiParameters, http, keccak256, parseUnits, stringToBytes, zeroAddress } from "viem";
 import { base, baseSepolia } from "viem/chains";
+import SharedEscrowArtifact from "./abi/SharedEscrow.json";
 import { PAYMASTER_API_URL, USDC_TOKEN_ADDRESS } from "../../config/coinbase.server";
 
-const { abi: SHARED_ESCROW_ABI } = require("../../../artifacts/contracts/SharedEscrow.sol/SharedEscrow.json");
+const { abi: SHARED_ESCROW_ABI } = SharedEscrowArtifact;
 
 const ZERO_HASH = "0x0000000000000000000000000000000000000000000000000000000000000000" as const;
 const UINT96_MAX = (1n << 96n) - 1n;
 const UINT40_MAX = (1n << 40n) - 1n;
-type PrepareUserOpResult = Awaited<ReturnType<CdpClient["evm"]["prepareAndSendUserOperation"]>>;
+type UserOpResult = Awaited<ReturnType<CdpClient["evm"]["sendUserOperation"]>>;
 
 export type EscrowNetwork = "base" | "base-sepolia";
 
@@ -131,7 +132,7 @@ class SharedEscrowDriver {
       },
     ];
 
-    const userOp: PrepareUserOpResult = await this.cdp.evm.prepareAndSendUserOperation({
+    const userOp: UserOpResult = await this.cdp.evm.sendUserOperation({
       smartAccount: smartAccount as any,
       network: this.network,
       paymasterUrl: this.paymasterUrl,
@@ -160,7 +161,7 @@ class SharedEscrowDriver {
       },
     ];
 
-    const userOp: PrepareUserOpResult = await this.cdp.evm.prepareAndSendUserOperation({
+    const userOp: UserOpResult = await this.cdp.evm.sendUserOperation({
       smartAccount: smartAccount as any,
       network: this.network,
       paymasterUrl: this.paymasterUrl,
@@ -183,7 +184,7 @@ class SharedEscrowDriver {
       },
     ];
 
-    const userOp: PrepareUserOpResult = await this.cdp.evm.prepareAndSendUserOperation({
+    const userOp: UserOpResult = await this.cdp.evm.sendUserOperation({
       smartAccount: smartAccount as any,
       network: this.network,
       paymasterUrl: this.paymasterUrl,

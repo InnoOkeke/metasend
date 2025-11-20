@@ -281,7 +281,7 @@ class CryptoGiftService {
    * Generate shareable gift link
    */
   generateGiftLink(giftId: string): string {
-    return `https://metasend-api.onrender.com/api/web/gift/${giftId}`;
+    return `https://metasend.vercel.app/gift/${giftId}`;
   }
 }
 

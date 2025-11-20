@@ -228,14 +228,6 @@ export const TippingScreen: React.FC<Props> = () => {
               />
 
               <TextField
-                label="Username (Unique ID)"
-                value={form.username}
-                onChangeText={(value) => setForm({ ...form, username: value })}
-                placeholder="username"
-                autoCapitalize="none"
-              />
-
-              <TextField
                 label="Description (Optional)"
                 value={form.description}
                 onChangeText={(value) => setForm({ ...form, description: value })}

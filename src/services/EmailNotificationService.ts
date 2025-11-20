@@ -49,7 +49,7 @@ type ExpoExtra = {
 
 class EmailNotificationService {
   private readonly extra = getExpoExtra();
-  private readonly APP_URL = this.extra.appUrl ?? process.env.APP_URL ?? "https://metasend-api.onrender.com";
+  private readonly APP_URL = this.extra.appUrl ?? process.env.APP_URL ?? "https://metasend.vercel.app";
   private readonly SUPPORT_EMAIL = this.extra.supportEmail ?? process.env.SUPPORT_EMAIL ?? "support@metasend.io";
   private readonly SENDGRID_API_KEY = this.extra.sendgridApiKey ?? process.env.SENDGRID_API_KEY ?? "";
   private readonly RESEND_API_KEY = this.extra.resendApiKey ?? process.env.RESEND_API_KEY ?? "";

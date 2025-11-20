@@ -158,7 +158,7 @@ class PaymentRequestService {
    * Generate shareable payment request link
    */
   generatePaymentRequestLink(requestId: string): string {
-    return `https://metasend-api.onrender.com/api/web/pay/${requestId}`;
+    return `https://metasend.vercel.app/pay/${requestId}`;
   }
 }
 

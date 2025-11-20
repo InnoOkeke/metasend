@@ -240,7 +240,7 @@ class TippingService {
    * Generate shareable tip jar link
    */
   generateTipJarLink(jarId: string): string {
-    return `https://metasend-api.onrender.com/api/web/tip/${jarId}`;
+    return `https://metasend.vercel.app/tip/${jarId}`;
   }
 }
 

@@ -12,9 +12,9 @@ declare const require: any;
 const getApiBaseUrl = () => {
   try {
     const Constants = require("expo-constants").default;
-    return Constants?.expoConfig?.extra?.metasendApiBaseUrl || process.env.METASEND_API_BASE_URL || "https://metasend.vercel.app";
+    return Constants?.expoConfig?.extra?.metasendApiBaseUrl || process.env.METASEND_API_BASE_URL || "https://metasend-api.onrender.com";
   } catch (_error) {
-    return process.env.METASEND_API_BASE_URL || "https://metasend.vercel.app";
+    return process.env.METASEND_API_BASE_URL || "https://metasend-api.onrender.com";
   }
 };
 
@@ -281,7 +281,7 @@ class CryptoGiftService {
    * Generate shareable gift link
    */
   generateGiftLink(giftId: string): string {
-    return `https://metasend.vercel.app/gift/${giftId}`;
+    return `https://metasend-api.onrender.com/api/web/gift/${giftId}`;
   }
 }
 

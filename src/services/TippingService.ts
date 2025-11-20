@@ -11,9 +11,9 @@ declare const require: any;
 const getApiBaseUrl = () => {
   try {
     const Constants = require("expo-constants").default;
-    return Constants?.expoConfig?.extra?.metasendApiBaseUrl || process.env.METASEND_API_BASE_URL || "https://metasend.vercel.app";
+    return Constants?.expoConfig?.extra?.metasendApiBaseUrl || process.env.METASEND_API_BASE_URL || "https://metasend-api.onrender.com";
   } catch (_error) {
-    return process.env.METASEND_API_BASE_URL || "https://metasend.vercel.app";
+    return process.env.METASEND_API_BASE_URL || "https://metasend-api.onrender.com";
   }
 };
 
@@ -240,7 +240,7 @@ class TippingService {
    * Generate shareable tip jar link
    */
   generateTipJarLink(jarId: string): string {
-    return `https://metasend.vercel.app/tip/${jarId}`;
+    return `https://metasend-api.onrender.com/api/web/tip/${jarId}`;
   }
 }
 

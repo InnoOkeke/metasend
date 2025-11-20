@@ -12,9 +12,9 @@ declare const require: any;
 const getApiBaseUrl = () => {
   try {
     const Constants = require("expo-constants").default;
-    return Constants?.expoConfig?.extra?.metasendApiBaseUrl || process.env.METASEND_API_BASE_URL || "https://metasend.vercel.app";
+    return Constants?.expoConfig?.extra?.metasendApiBaseUrl || process.env.METASEND_API_BASE_URL || "https://metasend-api.onrender.com";
   } catch {
-    return process.env.METASEND_API_BASE_URL || "https://metasend.vercel.app";
+    return process.env.METASEND_API_BASE_URL || "https://metasend-api.onrender.com";
   }
 };
 
@@ -158,7 +158,7 @@ class PaymentRequestService {
    * Generate shareable payment request link
    */
   generatePaymentRequestLink(requestId: string): string {
-    return `https://metasend.vercel.app/pay/${requestId}`;
+    return `https://metasend-api.onrender.com/api/web/pay/${requestId}`;
   }
 }
 

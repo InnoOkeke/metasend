@@ -49,7 +49,7 @@ type ExpoExtra = {
 
 class EmailNotificationService {
   private readonly extra = getExpoExtra();
-  private readonly APP_URL = this.extra.appUrl ?? process.env.APP_URL ?? "https://metasend.vercel.app";
+  private readonly APP_URL = this.extra.appUrl ?? process.env.APP_URL ?? "https://metasend-api.onrender.com";
   private readonly SUPPORT_EMAIL = this.extra.supportEmail ?? process.env.SUPPORT_EMAIL ?? "support@metasend.io";
   private readonly SENDGRID_API_KEY = this.extra.sendgridApiKey ?? process.env.SENDGRID_API_KEY ?? "";
   private readonly RESEND_API_KEY = this.extra.resendApiKey ?? process.env.RESEND_API_KEY ?? "";
@@ -58,7 +58,7 @@ class EmailNotificationService {
   private readonly AWS_SES_SECRET_KEY = this.extra.awsSesSecretKey ?? process.env.AWS_SES_SECRET_KEY ?? "";
   private readonly apiBaseUrl = (isReactNative ? this.extra.metasendApiBaseUrl : process.env.METASEND_API_BASE_URL) ||
     process.env.METASEND_API_BASE_URL ||
-    "https://metasend.vercel.app";
+    "https://metasend-api.onrender.com";
   private readonly apiKey = (isReactNative ? this.extra.metasendApiKey : process.env.METASEND_API_KEY) || "";
 
   /**
@@ -73,7 +73,7 @@ class EmailNotificationService {
     transferId: string
   ): Promise<boolean> {
     const subject = `You received ${amount} ${token} from ${senderName}!`;
-    
+
     const html = `
       <!DOCTYPE html>
       <html>
@@ -196,7 +196,7 @@ class EmailNotificationService {
     token: string,
     status: "sent" | "pending"
   ): Promise<boolean> {
-    const subject = status === "sent" 
+    const subject = status === "sent"
       ? `✅ Transfer sent to ${recipientEmail}`
       : `⏳ Transfer pending for ${recipientEmail}`;
 
@@ -386,11 +386,11 @@ class EmailNotificationService {
         console.warn("⚠️ Missing METASEND_API_KEY. Email not sent.");
         return false;
       }
-      
+
       console.log('📧 Sending email to:', params.to);
       console.log('🔧 API Base URL:', this.apiBaseUrl);
       console.log('🔑 API Key (first 10 chars):', this.apiKey.substring(0, 10));
-      
+
       const response = await fetch(`${this.apiBaseUrl}/api/send-email`, {
         method: 'POST',
         headers: {
@@ -412,7 +412,7 @@ class EmailNotificationService {
       }
 
       const data = await response.json();
-      
+
       console.log("✅ Email sent successfully to:", params.to);
 
       return true;

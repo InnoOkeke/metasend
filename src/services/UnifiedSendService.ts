@@ -14,7 +14,7 @@ export const SendToEmailSchema = z.object({
   amount: z.string(),
   token: z.string(),
   tokenAddress: z.string(),
-  chain: z.enum(["evm", "solana", "tron"]),
+  chain: z.enum(["base"]),
   decimals: z.number(),
   senderUserId: z.string(),
   message: z.string().optional(),
@@ -25,7 +25,7 @@ export const SendToAddressSchema = z.object({
   amount: z.string(),
   token: z.string(),
   tokenAddress: z.string(),
-  chain: z.enum(["evm", "solana", "tron"]),
+  chain: z.enum(["base"]),
   decimals: z.number(),
   senderUserId: z.string(),
   message: z.string().optional(),
@@ -64,7 +64,7 @@ class UnifiedSendService {
     // Check if it's an email
     if (this.isEmail(trimmed)) {
       const user = await userDirectoryService.findUserByEmail(trimmed);
-      
+
       if (user) {
         const hasWallet = chain ? Boolean(user.wallets[chain]) : false;
         return {
@@ -267,7 +267,7 @@ class UnifiedSendService {
    */
   async getSendPreview(input: string, amount: string, token: string, chain: ChainType) {
     const resolution = await this.resolveRecipient(input, chain);
-    
+
     return {
       recipient: resolution,
       amount,
@@ -293,12 +293,12 @@ class UnifiedSendService {
     // - For EVM: Use ethers.js or viem
     // - For Solana: Use @solana/web3.js
     // - For Tron: Use TronWeb
-    
+
     // Simulate transaction
     await this.delay(1000);
-    
+
     console.log("Executing transfer:", params);
-    
+
     const txHash = `0x${Math.random().toString(36).substring(2).padEnd(64, "0")}`;
     return txHash;
   }
@@ -309,15 +309,9 @@ class UnifiedSendService {
   }
 
   private isBlockchainAddress(input: string): boolean {
-    // EVM address
+    // EVM address (Base)
     if (/^0x[a-fA-F0-9]{40}$/.test(input)) return true;
-    
-    // Solana address (base58, typically 32-44 chars)
-    if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(input)) return true;
-    
-    // Tron address (starts with T, 34 chars)
-    if (/^T[a-zA-Z0-9]{33}$/.test(input)) return true;
-    
+
     return false;
   }
 

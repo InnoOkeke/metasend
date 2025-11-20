@@ -29,7 +29,7 @@ export const PaymentRequestsScreen: React.FC<Props> = () => {
   const createRequestMutation = useMutation({
     mutationFn: async (input: CreatePaymentRequestInput) => {
       if (!profile) throw new Error("Not signed in");
-      
+
       return await paymentRequestService.createPaymentRequest(
         profile.userId,
         profile.email,
@@ -39,7 +39,7 @@ export const PaymentRequestsScreen: React.FC<Props> = () => {
     },
     onSuccess: (request) => {
       const link = paymentRequestService.generatePaymentRequestLink(request.requestId);
-      
+
       Alert.alert(
         "Payment Request Created! 🎉",
         `Amount: ${request.amount} ${request.token}\n\nYour payment link is ready to share!`,
@@ -84,7 +84,7 @@ export const PaymentRequestsScreen: React.FC<Props> = () => {
     createRequestMutation.mutate({
       amount: form.amount,
       token: "USDC",
-      chain: "evm",
+      chain: "base",
       description: form.description,
       payerEmail: form.payerEmail || undefined,
       expiresInDays: 7,
@@ -260,7 +260,7 @@ const createStyles = (colors: ColorPalette) =>
       color: colors.textSecondary,
       textAlign: "center",
     },
-    
+
     // Modal Styles
     modalOverlay: {
       flex: 1,

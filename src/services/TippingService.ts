@@ -20,18 +20,29 @@ const getApiBaseUrl = () => {
 export const CreateTipJarSchema = z.object({
   title: z.string().min(1).max(100),
   description: z.string().max(500).optional(),
+  username: z.string().min(3).max(30).optional(),
+  socialLinks: z.object({
+    twitter: z.string().optional(),
+    farcaster: z.string().optional(),
+    instagram: z.string().optional(),
+    website: z.string().optional(),
+  }).optional(),
+  walletAddresses: z.object({
+    evm: z.string().optional(),
+    solana: z.string().optional(),
+  }).optional(),
   suggestedAmounts: z.array(z.number()).min(1).max(6),
   acceptedTokens: z.array(z.object({
     token: z.string(),
-    chain: z.enum(["evm", "solana", "tron"]),
+    chain: z.enum(["base"]),
   })),
 });
 
 export const SendTipSchema = z.object({
-  jarId: z.string(),
+  jarId: z.string().optional(),
   amount: z.string(),
   token: z.string(),
-  chain: z.enum(["evm", "solana", "tron"]),
+  chain: z.enum(["base"]),
   message: z.string().max(280).optional(),
   isAnonymous: z.boolean().optional().default(false),
 });
@@ -88,7 +99,8 @@ class TippingService {
     });
 
     if (!response.ok) {
-      throw new Error("Failed to create tip jar");
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error ? JSON.stringify(errorData.error) : "Failed to create tip jar");
     }
 
     return await response.json();
@@ -128,21 +140,27 @@ class TippingService {
   ): Promise<Tip> {
     const validated = SendTipSchema.parse(input);
 
+    const requestBody: any = {
+      tipperUserId: validated.isAnonymous ? undefined : tipperUserId,
+      tipperEmail: validated.isAnonymous ? undefined : tipperEmail,
+      tipperName: validated.isAnonymous ? undefined : tipperName,
+      isAnonymous: validated.isAnonymous,
+      amount: validated.amount,
+      token: validated.token,
+      chain: validated.chain,
+      message: validated.message,
+      transactionHash,
+    };
+
+    // Include jarId if provided
+    if (validated.jarId) {
+      requestBody.jarId = validated.jarId;
+    }
+
     const response = await fetch(`${this.apiBaseUrl}/api/tips?action=send-tip`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        jarId: validated.jarId,
-        tipperUserId: validated.isAnonymous ? undefined : tipperUserId,
-        tipperEmail: validated.isAnonymous ? undefined : tipperEmail,
-        tipperName: validated.isAnonymous ? undefined : tipperName,
-        isAnonymous: validated.isAnonymous,
-        amount: validated.amount,
-        token: validated.token,
-        chain: validated.chain,
-        message: validated.message,
-        transactionHash,
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {
@@ -165,16 +183,57 @@ class TippingService {
   }
 
   /**
-   * Update tip jar status
+   * Send a tip to a user (micro-tipping) - auto-creates tip jar if needed
    */
-  async updateTipJarStatus(jarId: string, userId: string, status: TipJarStatus): Promise<void> {
-    const response = await fetch(`${this.apiBaseUrl}/api/tips?jarId=${jarId}&status=${status}`, {
-      method: "PATCH",
+  async sendTipToUser(
+    tipperUserId: string | undefined,
+    tipperEmail: string | undefined,
+    tipperName: string | undefined,
+    recipientUserId: string,
+    recipientEmail: string,
+    recipientName: string | undefined,
+    input: Omit<SendTipInput, 'jarId'>,
+    transactionHash: string
+  ): Promise<Tip> {
+    const validated = SendTipSchema.omit({ jarId: true }).parse(input);
+
+    const response = await fetch(`${this.apiBaseUrl}/api/tips?action=send-tip`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        recipientUserId,
+        recipientEmail,
+        recipientName,
+        tipperUserId: validated.isAnonymous ? undefined : tipperUserId,
+        tipperEmail: validated.isAnonymous ? undefined : tipperEmail,
+        tipperName: validated.isAnonymous ? undefined : tipperName,
+        isAnonymous: validated.isAnonymous,
+        amount: validated.amount,
+        token: validated.token,
+        chain: validated.chain,
+        message: validated.message,
+        transactionHash,
+      }),
     });
 
     if (!response.ok) {
-      throw new Error("Failed to update tip jar status");
+      throw new Error("Failed to send tip");
     }
+
+    return await response.json();
+  }
+
+  /**
+   * Get user's active tip jar (creates default if none exists)
+   */
+  async getUserTipJar(userId: string): Promise<TipJar | null> {
+    const response = await fetch(`${this.apiBaseUrl}/api/tips?creatorUserId=${userId}`);
+    if (!response.ok) {
+      return null;
+    }
+    const jars: TipJar[] = await response.json();
+    // Return the first active jar, or null if none
+    return jars.find(jar => jar.status === 'active') || null;
   }
 
   /**

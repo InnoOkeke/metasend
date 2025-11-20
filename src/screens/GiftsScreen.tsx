@@ -34,18 +34,18 @@ export const GiftsScreen: React.FC<Props> = () => {
   const createGiftMutation = useMutation({
     mutationFn: async (input: CreateGiftInput) => {
       if (!profile) throw new Error("Not signed in");
-      
+
       return await cryptoGiftService.createGift(
         profile.userId,
         profile.email,
-        profile.displayName,
+        profile.displayName || undefined,
         input
       );
     },
     onSuccess: async (gift) => {
       const link = cryptoGiftService.generateGiftLink(gift.giftId);
       const themeConfig = cryptoGiftService.getGiftTheme(gift.theme);
-      
+
       Alert.alert(
         `${themeConfig.emoji} Gift Sent!`,
         `Your ${gift.amount} USDC gift has been sent to ${gift.recipientEmail}!\n\nShare the link with them to claim it.`,
@@ -92,7 +92,7 @@ export const GiftsScreen: React.FC<Props> = () => {
       recipientName: form.recipientName || undefined,
       amount: form.amount,
       token: "USDC",
-      chain: "evm",
+      chain: "base",
       theme: form.selectedTheme,
       message: form.message || undefined,
       expiresInDays: 30,
@@ -303,7 +303,7 @@ const createStyles = (colors: ColorPalette) =>
       color: colors.textSecondary,
       textAlign: "center",
     },
-    
+
     // Modal Styles
     modalOverlay: {
       flex: 1,

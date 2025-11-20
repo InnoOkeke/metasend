@@ -93,7 +93,7 @@ export async function sendUsdcWithPaymaster(
     to: intent.recipientEmail,
     amount: intent.amountUsdc,
   });
-  
+
   const { recipientEmail, amountUsdc } = intent;
 
   if (amountUsdc <= 0) {
@@ -104,13 +104,13 @@ export async function sendUsdcWithPaymaster(
   console.log("💰 Checking balance for", walletAddress.slice(0, 6));
   const balance = await getUsdcBalance(walletAddress);
   console.log("💵 Balance:", balance.toFixed(2), "USDC");
-  
+
   if (balance < amountUsdc) {
     throw new Error(`Insufficient USDC balance. You have ${balance.toFixed(2)} USDC but need ${amountUsdc.toFixed(2)} USDC`);
   }
 
   const senderAddress = assertHexAddress(walletAddress, "Sender wallet");
-  
+
   console.log("🔍 Resolving recipient:", recipientEmail);
   const contact = await resolveEmailToWallet({ email: recipientEmail });
   console.log("✅ Recipient resolved:", { isRegistered: contact.isRegistered, wallet: contact.walletAddress?.slice(0, 6) });
@@ -150,8 +150,8 @@ export async function sendUsdcWithPaymaster(
     recipientWallet: contact.walletAddress,
   };
 
-    await persistTransferRecord(record);
-    console.log("☁️ Transfer record saved to API");
+  await persistTransferRecord(record);
+  console.log("☁️ Transfer record saved to API");
 
   // Fire-and-forget email notifications for registered recipients
   const senderName = intent.senderName ?? intent.senderEmail ?? walletAddress.slice(0, 6);
@@ -193,7 +193,7 @@ export async function sendUsdcWithPaymaster(
       });
     })
     .catch((error) => console.warn("⚠️ Email notification promise rejected:", error));
-  
+
   return record;
 }
 
@@ -211,7 +211,7 @@ async function enqueuePendingTransfer(
     amount: intent.amountUsdc.toString(),
     token: DEFAULT_TOKEN_SYMBOL,
     tokenAddress: USDC_TOKEN_ADDRESS,
-    chain: "evm",
+    chain: "base",
     decimals: USDC_DECIMALS,
     message: intent.memo,
   });
@@ -225,8 +225,8 @@ async function enqueuePendingTransfer(
     pendingTransferId: transfer.transferId,
   };
 
-    await persistTransferRecord(record);
-    console.log("☁️ Pending transfer saved to API");
+  await persistTransferRecord(record);
+  console.log("☁️ Pending transfer saved to API");
 
   return record;
 }

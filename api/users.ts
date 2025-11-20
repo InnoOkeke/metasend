@@ -14,8 +14,8 @@ const badRequest = (res: Response, message: string) => res.status(400).json({ su
 router.get('/', async (req: Request, res: Response) => {
   // Health check endpoint (no auth required)
   if (req.url?.includes('health')) {
-    return res.status(200).json({ 
-      success: true, 
+    return res.status(200).json({
+      success: true,
       status: 'healthy',
       timestamp: new Date().toISOString(),
       mongoConfigured: Boolean(process.env.MONGODB_URI)
@@ -73,7 +73,7 @@ router.post('/', async (req: Request, res: Response) => {
         emailVerified: emailVerified ?? existing.emailVerified,
         wallets: {
           ...existing.wallets,
-          evm: walletAddress ?? existing.wallets?.evm,
+          base: walletAddress ?? existing.wallets?.base,
         },
         profile: {
           ...existing.profile,
@@ -91,7 +91,7 @@ router.post('/', async (req: Request, res: Response) => {
       email: normalizedEmail,
       emailVerified: emailVerified ?? true,
       wallets: {
-        evm: walletAddress,
+        base: walletAddress,
       },
       profile: {
         displayName,

@@ -54,7 +54,7 @@ class EscrowService {
   }
 
   async createOnchainTransfer(request: EscrowCreateRequest): Promise<EscrowCreateResult> {
-    if (request.chain !== "evm") {
+    if (request.chain !== "base") {
       throw new Error(`Unsupported chain ${request.chain} for shared escrow`);
     }
 

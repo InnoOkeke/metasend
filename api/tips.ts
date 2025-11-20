@@ -11,28 +11,42 @@ import { TipJar, Tip, TipJarStatus } from "../src/types/database";
 const CreateTipJarSchema = z.object({
   creatorUserId: z.string(),
   creatorEmail: z.string().email(),
-  creatorName: z.string().optional(),
-  creatorAvatar: z.string().optional(),
+  creatorName: z.string().nullable().optional(),
+  creatorAvatar: z.string().nullable().optional(),
   title: z.string(),
-  description: z.string().optional(),
+  description: z.string().nullable().optional(),
+  username: z.string().nullable().optional(), // Should be unique, but for now just optional in schema
+  socialLinks: z.object({
+    twitter: z.string().nullable().optional(),
+    farcaster: z.string().nullable().optional(),
+    instagram: z.string().nullable().optional(),
+    website: z.string().nullable().optional(),
+  }).nullable().optional(),
+  walletAddresses: z.object({
+    evm: z.string().nullable().optional(),
+    solana: z.string().nullable().optional(),
+  }).nullable().optional(),
   suggestedAmounts: z.array(z.number()),
   acceptedTokens: z.array(
     z.object({
       token: z.string(),
-      chain: z.enum(["evm", "solana", "tron"]),
+      chain: z.enum(["base"]),
     })
   ),
 });
 
 const SendTipSchema = z.object({
-  jarId: z.string(),
+  jarId: z.string().optional(),
+  recipientUserId: z.string().optional(),
+  recipientEmail: z.string().optional(),
+  recipientName: z.string().optional(),
   tipperUserId: z.string().optional(),
   tipperEmail: z.string().email().optional(),
   tipperName: z.string().optional(),
   isAnonymous: z.boolean(),
   amount: z.string(),
   token: z.string(),
-  chain: z.enum(["evm", "solana", "tron"]),
+  chain: z.enum(["base"]),
   message: z.string().optional(),
   transactionHash: z.string(),
 });
@@ -87,6 +101,9 @@ router.post('/', async (req: Request, res: Response) => {
         creatorAvatar: data.creatorAvatar,
         title: data.title,
         description: data.description,
+        username: data.username,
+        socialLinks: data.socialLinks,
+        walletAddresses: data.walletAddresses,
         suggestedAmounts: data.suggestedAmounts,
         acceptedTokens: data.acceptedTokens,
         status: 'active',
@@ -101,20 +118,89 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     if (action === 'send-tip') {
+      console.log('[tips] send-tip request:', req.body);
       const validation = SendTipSchema.safeParse(req.body);
-      if (!validation.success) return res.status(400).json({ error: validation.error.errors });
+      if (!validation.success) {
+        console.error('[tips] validation failed:', validation.error.errors);
+        return res.status(400).json({ error: validation.error.errors });
+      }
       const data = validation.data;
 
-      const jar = await mongoDb.getTipJarById(data.jarId);
-      if (!jar) return res.status(404).json({ error: 'Tip jar not found' });
-      if (jar.status !== 'active') return res.status(400).json({ error: 'Tip jar is not active' });
+      let jarId = data.jarId;
+
+      // If no jarId provided, try to find or create jar for recipient
+      if (!jarId) {
+        if (!data.recipientUserId || !data.recipientEmail) {
+          console.error('[tips] missing recipientUserId or recipientEmail for auto-create');
+          return res.status(400).json({ error: 'Either jarId or recipientUserId+recipientEmail must be provided' });
+        }
+
+        // Check if recipient has an active tip jar
+        const existingJars = await mongoDb.getTipJarsByCreator(data.recipientUserId);
+        const activeJar = existingJars.find(jar => jar.status === 'active');
+
+        if (activeJar) {
+          jarId = activeJar.jarId;
+        } else {
+          // Auto-create a default tip jar for the recipient
+          const newJarId = `jar_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+          const now = new Date().toISOString();
+
+          const newJar: any = {
+            jarId: newJarId,
+            creatorUserId: data.recipientUserId,
+            creatorEmail: data.recipientEmail.toLowerCase().trim(),
+            creatorName: data.recipientName,
+            creatorAvatar: undefined,
+            title: `${data.recipientName || data.recipientEmail}'s Tip Jar`,
+            description: "Support my work with crypto tips!",
+            suggestedAmounts: [1, 5, 10, 25],
+            acceptedTokens: [{ token: "USDC", chain: "base" }],
+            status: 'active',
+            totalTipsReceived: 0,
+            tipCount: 0,
+            createdAt: now,
+            updatedAt: now,
+          };
+
+          try {
+            const result = await mongoDb.createTipJar(newJar);
+            if (!result) {
+              console.error('[tips] createTipJar returned falsy value:', result);
+              return res.status(500).json({ error: 'Failed to create tip jar', details: 'createTipJar returned falsy value' });
+            }
+            console.log('[tips] tip jar created:', newJarId);
+            jarId = newJarId;
+          } catch (err) {
+            const errorMsg = (err && typeof err === 'object' && 'message' in err) ? (err as any).message : String(err);
+            console.error('[tips] failed to create tip jar:', errorMsg);
+            return res.status(500).json({ error: 'Failed to create tip jar', details: errorMsg });
+          }
+        }
+      }
+
+      // At this point, jarId should be defined
+      if (!jarId) {
+        console.error('[tips] failed to determine tip jar');
+        return res.status(400).json({ error: 'Failed to determine tip jar' });
+      }
+
+      const jar = await mongoDb.getTipJarById(jarId);
+      if (!jar) {
+        console.error('[tips] tip jar not found after creation:', jarId);
+        return res.status(404).json({ error: 'Tip jar not found' });
+      }
+      if (jar.status !== 'active') {
+        console.error('[tips] tip jar not active:', jarId);
+        return res.status(400).json({ error: 'Tip jar is not active' });
+      }
 
       const tipId = `tip_${Date.now()}_${Math.random().toString(36).substring(7)}`;
       const now = new Date().toISOString();
 
       const tip: any = {
         tipId,
-        jarId: data.jarId,
+        jarId,
         tipperUserId: data.tipperUserId,
         tipperEmail: data.tipperEmail?.toLowerCase().trim(),
         tipperName: data.tipperName,
@@ -127,14 +213,25 @@ router.post('/', async (req: Request, res: Response) => {
         createdAt: now,
       };
 
-      await mongoDb.createTip(tip);
+      try {
+        await mongoDb.createTip(tip);
+      } catch (err) {
+        const errorMsg = (err && typeof err === 'object' && 'message' in err) ? (err as any).message : String(err);
+        console.error('[tips] failed to create tip:', errorMsg);
+        return res.status(500).json({ error: 'Failed to create tip', details: errorMsg });
+      }
 
       const amount = parseFloat(String(data.amount));
-      await mongoDb.updateTipJar(data.jarId, {
-        totalTipsReceived: (jar.totalTipsReceived || 0) + amount,
-        tipCount: (jar.tipCount || 0) + 1,
-        updatedAt: now,
-      });
+      try {
+        await mongoDb.updateTipJar(jarId, {
+          totalTipsReceived: (jar.totalTipsReceived || 0) + amount,
+          tipCount: (jar.tipCount || 0) + 1,
+          updatedAt: now,
+        });
+      } catch (err) {
+        console.error('[tips] failed to update tip jar:', err);
+        // Don't fail the request, just log
+      }
 
       return res.status(201).json(tip);
     }

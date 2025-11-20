@@ -16,7 +16,7 @@ const CreateGiftSchema = z.object({
   recipientName: z.string().optional(),
   amount: z.string(),
   token: z.string(),
-  chain: z.enum(["evm", "solana", "tron"]),
+  chain: z.enum(["base"]),
   theme: z.enum(["birthday", "anniversary", "holiday", "thank_you", "congratulations", "red_envelope", "custom"]),
   message: z.string().optional(),
   expiresInDays: z.number().optional(),

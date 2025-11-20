@@ -309,6 +309,9 @@ function getPaymentPage(request: any, deepLink: string) {
 }
 
 function getTipPage(jar: any, deepLink: string) {
+  const socialLinks = jar.socialLinks || {};
+  const hasSocials = Object.values(socialLinks).some(link => !!link);
+
   return `
     <!DOCTYPE html>
     <html lang="en">
@@ -336,20 +339,55 @@ function getTipPage(jar: any, deepLink: string) {
           box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
           text-align: center;
         }
-        .icon { font-size: 64px; margin-bottom: 20px; }
-        h1 { font-size: 28px; color: #1a202c; margin-bottom: 10px; }
-        .creator { font-size: 18px; color: #4a5568; margin-bottom: 20px; }
-        .description { background: #f7fafc; padding: 20px; border-radius: 12px; margin: 20px 0; color: #2d3748; }
+        .avatar {
+          width: 100px;
+          height: 100px;
+          border-radius: 50%;
+          background: #f3f4f6;
+          margin: 0 auto 20px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 40px;
+          border: 4px solid white;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        h1 { font-size: 28px; color: #1a202c; margin-bottom: 5px; }
+        .username { font-size: 16px; color: #6b7280; margin-bottom: 20px; }
+        .description { 
+          background: #f7fafc; 
+          padding: 20px; 
+          border-radius: 12px; 
+          margin: 20px 0; 
+          color: #2d3748;
+          line-height: 1.6;
+        }
         .stats {
           display: flex;
           justify-content: space-around;
           margin: 20px 0;
           padding: 20px;
-          background: #f7fafc;
+          background: #fff7ed;
           border-radius: 12px;
+          border: 1px solid #ffedd5;
         }
         .stat-value { font-size: 24px; font-weight: bold; color: #F59E0B; }
         .stat-label { font-size: 14px; color: #718096; margin-top: 5px; }
+        
+        .social-links {
+          display: flex;
+          justify-content: center;
+          gap: 15px;
+          margin: 20px 0;
+        }
+        .social-link {
+          color: #4b5563;
+          text-decoration: none;
+          font-size: 20px;
+          transition: color 0.2s;
+        }
+        .social-link:hover { color: #F59E0B; }
+
         .button {
           display: inline-block;
           background: linear-gradient(135deg, #F59E0B 0%, #EF4444 100%);
@@ -360,21 +398,54 @@ function getTipPage(jar: any, deepLink: string) {
           font-weight: 600;
           font-size: 18px;
           margin: 20px 0;
+          width: 100%;
+          transition: transform 0.2s;
         }
-        .footer { margin-top: 30px; color: #718096; font-size: 14px; }
+        .button:hover { transform: translateY(-2px); }
+        .footer { margin-top: 30px; color: #9ca3af; font-size: 14px; }
+        
+        .qr-placeholder {
+          margin: 20px auto;
+          padding: 20px;
+          background: white;
+          border: 1px dashed #cbd5e1;
+          border-radius: 12px;
+          color: #64748b;
+          font-size: 14px;
+        }
       </style>
     </head>
     <body>
       <div class="container">
-        <div class="icon">🎉</div>
-        <h1>${jar.title}</h1>
-        <div class="creator">by ${jar.creatorName || jar.creatorEmail}</div>
-        ${jar.description ? `<div class="description">${jar.description}</div>` : ''}
-        <div class="stats">
-          <div><div class="stat-value">${jar.tipCount}</div><div class="stat-label">Tips</div></div>
-          <div><div class="stat-value">${jar.totalTipsReceived.toFixed(2)}</div><div class="stat-label">USDC</div></div>
+        <div class="avatar">
+          ${jar.creatorAvatar ? `<img src="${jar.creatorAvatar}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">` : '👤'}
         </div>
+        
+        <h1>${jar.title}</h1>
+        <div class="username">@${jar.username || jar.creatorName || 'user'}</div>
+        
+        ${jar.description ? `<div class="description">${jar.description}</div>` : ''}
+        
+        ${hasSocials ? `
+          <div class="social-links">
+            ${socialLinks.twitter ? `<a href="${socialLinks.twitter}" target="_blank" class="social-link">Twitter</a>` : ''}
+            ${socialLinks.farcaster ? `<a href="${socialLinks.farcaster}" target="_blank" class="social-link">Farcaster</a>` : ''}
+            ${socialLinks.instagram ? `<a href="${socialLinks.instagram}" target="_blank" class="social-link">Instagram</a>` : ''}
+            ${socialLinks.website ? `<a href="${socialLinks.website}" target="_blank" class="social-link">Website</a>` : ''}
+          </div>
+        ` : ''}
+
+        <div class="stats">
+          <div><div class="stat-value">${jar.tipCount}</div><div class="stat-label">Supporters</div></div>
+          <div><div class="stat-value">$${jar.totalTipsReceived.toFixed(2)}</div><div class="stat-label">Received</div></div>
+        </div>
+
         <a href="${deepLink}" class="button">Send a Tip 🎁</a>
+        
+        <div class="qr-placeholder">
+          Open in MetaSend App to pay with Crypto, Card, or Bank Transfer
+        </div>
+
         <div class="footer">Powered by <strong>MetaSend</strong></div>
       </div>
     </body>

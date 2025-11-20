@@ -346,9 +346,20 @@ class MongoDatabase {
 
   // Tip Jar operations
   async createTipJar(jar: any): Promise<any> {
+    console.log('[mongoDatabase] createTipJar called with:', jar);
     const collection = await this.getCollection("tipJars");
-    await collection.insertOne(jar);
-    return jar;
+    try {
+      const result = await collection.insertOne(jar);
+      console.log('[mongoDatabase] createTipJar insertOne result:', result);
+      if (!result || !result.insertedId) {
+        console.error('[mongoDatabase] createTipJar failed: No insertedId');
+        return null;
+      }
+      return jar;
+    } catch (err) {
+      console.error('[mongoDatabase] createTipJar error:', err);
+      return null;
+    }
   }
 
   async getTipJarById(jarId: string): Promise<any | null> {

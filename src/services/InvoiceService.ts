@@ -23,7 +23,7 @@ export const CreateInvoiceSchema = z.object({
   tax: z.string().optional(),
   total: z.string(),
   token: z.string(),
-  chain: z.enum(["evm", "solana", "tron"]),
+  chain: z.enum(["base"]),
   dueDate: z.string(), // ISO date
   notes: z.string().optional(),
 });
@@ -55,7 +55,7 @@ class InvoiceService {
     input: CreateInvoiceInput
   ): Promise<Invoice> {
     const validated = CreateInvoiceSchema.parse(input);
-    
+
     const now = new Date();
     const invoiceNumber = this.generateInvoiceNumber();
 

@@ -23,7 +23,7 @@ export const CreateGiftSchema = z.object({
   recipientName: z.string().optional(),
   amount: z.string(),
   token: z.string(),
-  chain: z.enum(["evm", "solana", "tron"]),
+  chain: z.enum(["base"]),
   theme: z.enum(["birthday", "anniversary", "holiday", "thank_you", "congratulations", "red_envelope", "custom"]),
   message: z.string().max(500).optional(),
   expiresInDays: z.number().optional().default(30),
@@ -124,7 +124,7 @@ class CryptoGiftService {
     input: CreateGiftInput
   ): Promise<CryptoGift> {
     const validated = CreateGiftSchema.parse(input);
-    
+
     const now = new Date();
     const expiresAt = validated.expiresInDays
       ? new Date(now.getTime() + validated.expiresInDays * 24 * 60 * 60 * 1000)

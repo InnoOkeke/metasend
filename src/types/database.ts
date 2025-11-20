@@ -3,16 +3,14 @@
  * These can be implemented with Firebase, Supabase, MongoDB, etc.
  */
 
-export type ChainType = "evm" | "solana" | "tron";
+export type ChainType = "base";
 
 export type User = {
   userId: string;
   email: string;
   emailVerified: boolean;
   wallets: {
-    evm?: string;
-    solana?: string;
-    tron?: string;
+    base?: string;
   };
   profile: {
     displayName?: string;
@@ -91,25 +89,25 @@ export type PaymentRequest = {
   creatorUserId: string;
   creatorEmail: string;
   creatorName?: string;
-  
+
   // Request details
   amount: string;
   token: string;
   chain: ChainType;
   description: string;
-  
+
   // Payer info
   payerEmail?: string;
   payerUserId?: string;
   payerName?: string;
-  
+
   // Status
   status: PaymentRequestStatus;
-  
+
   // Payment info
   paidAt?: string;
   transactionHash?: string;
-  
+
   // Metadata
   createdAt: string;
   expiresAt?: string;
@@ -124,18 +122,28 @@ export type TipJar = {
   creatorEmail: string;
   creatorName?: string;
   creatorAvatar?: string;
-  
+
   // Jar details
   title: string;
   description?: string;
+  username?: string;
+  socialLinks?: {
+    twitter?: string;
+    farcaster?: string;
+    instagram?: string;
+    website?: string;
+  };
+  walletAddresses?: {
+    base?: string;
+  };
   suggestedAmounts: number[]; // e.g., [1, 5, 10, 25]
   acceptedTokens: { token: string; chain: ChainType }[];
-  
+
   // Status
   status: TipJarStatus;
   totalTipsReceived: number;
   tipCount: number;
-  
+
   // Metadata
   createdAt: string;
   updatedAt: string;
@@ -144,22 +152,22 @@ export type TipJar = {
 export type Tip = {
   tipId: string;
   jarId: string;
-  
+
   // Tipper info
   tipperUserId?: string;
   tipperEmail?: string;
   tipperName?: string;
   isAnonymous: boolean;
-  
+
   // Tip details
   amount: string;
   token: string;
   chain: ChainType;
   message?: string;
-  
+
   // Transaction
   transactionHash: string;
-  
+
   // Metadata
   createdAt: string;
 };
@@ -176,19 +184,19 @@ export type InvoiceItem = {
 export type Invoice = {
   invoiceId: string;
   invoiceNumber: string;
-  
+
   // Creator (merchant)
   creatorUserId: string;
   creatorEmail: string;
   creatorName?: string;
   creatorAddress?: string;
-  
+
   // Client
   clientEmail: string;
   clientUserId?: string;
   clientName?: string;
   clientAddress?: string;
-  
+
   // Invoice details
   items: InvoiceItem[];
   subtotal: string;
@@ -197,18 +205,18 @@ export type Invoice = {
   total: string;
   token: string;
   chain: ChainType;
-  
+
   // Status
   status: InvoiceStatus;
-  
+
   // Dates
   issueDate: string;
   dueDate: string;
   paidAt?: string;
-  
+
   // Payment
   transactionHash?: string;
-  
+
   // Metadata
   notes?: string;
   createdAt: string;
@@ -220,38 +228,37 @@ export type GiftStatus = "pending" | "claimed" | "expired" | "cancelled";
 
 export type CryptoGift = {
   giftId: string;
-  
+
   // Sender
   senderUserId: string;
   senderEmail: string;
   senderName?: string;
-  
+
   // Recipient
   recipientEmail: string;
   recipientUserId?: string;
   recipientName?: string;
-  
+
   // Gift details
   amount: string;
   token: string;
   chain: ChainType;
   theme: GiftTheme;
   message?: string;
-  
+
   // Escrow (for unclaimed gifts)
   escrowAddress?: string;
   escrowPrivateKeyEncrypted?: string;
-  
+
   // Status
   status: GiftStatus;
-  
+
   // Transaction
   transactionHash?: string;
   claimTransactionHash?: string;
-  
+
   // Dates
   createdAt: string;
   expiresAt?: string;
   claimedAt?: string;
 };
-

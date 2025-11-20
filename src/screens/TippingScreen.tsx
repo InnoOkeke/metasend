@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Pressable, Alert, Share, Clipboard, Platform } from "react-native";
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { RootStackParamList } from "../navigation/RootNavigator";
 import { useCoinbase } from "../providers/CoinbaseProvider";
 import { useTheme } from "../providers/ThemeProvider";
@@ -25,7 +25,20 @@ export const TippingScreen: React.FC<Props> = () => {
   const [form, setForm] = useState({
     title: "",
     description: "",
+    username: "",
+    socialLinks: {
+      twitter: "",
+      farcaster: "",
+      instagram: "",
+      website: "",
+    },
     selectedAmounts: [1, 5, 10, 25] as number[],
+  });
+
+  const { data: tipJars, isLoading: isLoadingJars, refetch: refetchJars } = useQuery({
+    queryKey: ["my-tip-jars", profile?.userId],
+    queryFn: () => profile ? tippingService.getMyTipJars(profile.userId) : Promise.resolve([]),
+    enabled: !!profile,
   });
 
   const toggleAmount = (amount: number) => {
@@ -40,18 +53,19 @@ export const TippingScreen: React.FC<Props> = () => {
   const createJarMutation = useMutation({
     mutationFn: async (input: CreateTipJarInput) => {
       if (!profile) throw new Error("Not signed in");
-      
+
       return await tippingService.createTipJar(
         profile.userId,
         profile.email,
-        profile.displayName,
-        profile.photoUrl,
+        profile.displayName || undefined,
+        profile.photoUrl || undefined,
         input
       );
     },
     onSuccess: async (jar) => {
       const link = tippingService.generateTipJarLink(jar.jarId);
-      
+      refetchJars();
+
       Alert.alert(
         "Tip Jar Created! 🎁",
         `Share your tip jar:\n${link}`,
@@ -64,7 +78,13 @@ export const TippingScreen: React.FC<Props> = () => {
             text: "Done",
             onPress: () => {
               setShowCreateModal(false);
-              setForm({ title: "", description: "", selectedAmounts: [1, 5, 10, 25] });
+              setForm({
+                title: "",
+                description: "",
+                username: "",
+                socialLinks: { twitter: "", farcaster: "", instagram: "", website: "" },
+                selectedAmounts: [1, 5, 10, 25]
+              });
             },
           },
         ]
@@ -84,8 +104,15 @@ export const TippingScreen: React.FC<Props> = () => {
     createJarMutation.mutate({
       title: form.title,
       description: form.description || undefined,
+      username: form.username || undefined,
+      socialLinks: {
+        twitter: form.socialLinks.twitter || undefined,
+        farcaster: form.socialLinks.farcaster || undefined,
+        instagram: form.socialLinks.instagram || undefined,
+        website: form.socialLinks.website || undefined,
+      },
       suggestedAmounts: form.selectedAmounts,
-      acceptedTokens: [{ token: "USDC", chain: "evm" }],
+      acceptedTokens: [{ token: "USDC", chain: "base" }],
     });
   };
 
@@ -127,7 +154,45 @@ export const TippingScreen: React.FC<Props> = () => {
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>📊 Your Tip Jars</Text>
-          <Text style={styles.emptyText}>No tip jars yet. Create one to get started!</Text>
+          {isLoadingJars ? (
+            <Text style={styles.emptyText}>Loading...</Text>
+          ) : tipJars && tipJars.length > 0 ? (
+            tipJars.map((jar) => (
+              <View key={jar.jarId} style={styles.jarItem}>
+                <View style={styles.jarHeader}>
+                  <Text style={styles.jarTitle}>{jar.title}</Text>
+                  <View style={[styles.statusBadge, jar.status === 'active' ? styles.statusActive : styles.statusInactive]}>
+                    <Text style={[styles.statusText, jar.status === 'active' ? styles.statusTextActive : styles.statusTextInactive]}>{jar.status}</Text>
+                  </View>
+                </View>
+                <Text style={styles.jarStats}>
+                  {jar.tipCount} tips • ${jar.totalTipsReceived.toFixed(2)} received
+                </Text>
+                <View style={styles.jarActions}>
+                  <TouchableOpacity
+                    style={styles.actionButton}
+                    onPress={() => {
+                      const link = tippingService.generateTipJarLink(jar.jarId);
+                      Share.share({ message: `Support me: ${link}` });
+                    }}
+                  >
+                    <Text style={styles.actionButtonText}>Share Link</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.actionButton}
+                    onPress={() => {
+                      Clipboard.setString(tippingService.generateTipJarLink(jar.jarId));
+                      Alert.alert("Copied", "Link copied to clipboard");
+                    }}
+                  >
+                    <Text style={styles.actionButtonText}>Copy</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))
+          ) : (
+            <Text style={styles.emptyText}>No tip jars yet. Create one to get started!</Text>
+          )}
         </View>
       </ScrollView>
 
@@ -163,6 +228,14 @@ export const TippingScreen: React.FC<Props> = () => {
               />
 
               <TextField
+                label="Username (Unique ID)"
+                value={form.username}
+                onChangeText={(value) => setForm({ ...form, username: value })}
+                placeholder="username"
+                autoCapitalize="none"
+              />
+
+              <TextField
                 label="Description (Optional)"
                 value={form.description}
                 onChangeText={(value) => setForm({ ...form, description: value })}
@@ -171,9 +244,39 @@ export const TippingScreen: React.FC<Props> = () => {
                 numberOfLines={3}
               />
 
+              <Text style={styles.sectionLabel}>Social Links (Optional)</Text>
+              <TextField
+                label="Twitter / X"
+                value={form.socialLinks.twitter}
+                onChangeText={(value) => setForm({ ...form, socialLinks: { ...form.socialLinks, twitter: value } })}
+                placeholder="https://x.com/username"
+                autoCapitalize="none"
+              />
+              <TextField
+                label="Farcaster"
+                value={form.socialLinks.farcaster}
+                onChangeText={(value) => setForm({ ...form, socialLinks: { ...form.socialLinks, farcaster: value } })}
+                placeholder="https://warpcast.com/username"
+                autoCapitalize="none"
+              />
+              <TextField
+                label="Instagram"
+                value={form.socialLinks.instagram}
+                onChangeText={(value) => setForm({ ...form, socialLinks: { ...form.socialLinks, instagram: value } })}
+                placeholder="https://instagram.com/username"
+                autoCapitalize="none"
+              />
+              <TextField
+                label="Website"
+                value={form.socialLinks.website}
+                onChangeText={(value) => setForm({ ...form, socialLinks: { ...form.socialLinks, website: value } })}
+                placeholder="https://mysite.com"
+                autoCapitalize="none"
+              />
+
               <Text style={styles.sectionLabel}>Suggested Tip Amounts (USDC)</Text>
               <Text style={styles.sectionHint}>Select 1-6 amounts</Text>
-              
+
               <View style={styles.amountGrid}>
                 {SUGGESTED_TIPS.map((amount) => (
                   <TouchableOpacity
@@ -268,7 +371,72 @@ const createStyles = (colors: ColorPalette) =>
       color: colors.textSecondary,
       textAlign: "center",
     },
-    
+
+    // Jar Item Styles
+    jarItem: {
+      padding: spacing.md,
+      backgroundColor: colors.background,
+      borderRadius: 12,
+      marginBottom: spacing.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    jarHeader: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: spacing.xs,
+    },
+    jarTitle: {
+      ...typography.subtitle,
+      fontSize: 16,
+      color: colors.textPrimary,
+      flex: 1,
+    },
+    statusBadge: {
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 2,
+      borderRadius: 12,
+    },
+    statusActive: {
+      backgroundColor: colors.success + "20",
+    },
+    statusInactive: {
+      backgroundColor: colors.textSecondary + "20",
+    },
+    statusText: {
+      ...typography.caption,
+      fontSize: 10,
+      fontWeight: "700",
+      textTransform: "uppercase",
+    },
+    statusTextActive: {
+      color: colors.success,
+    },
+    statusTextInactive: {
+      color: colors.textSecondary,
+    },
+    jarStats: {
+      ...typography.caption,
+      color: colors.textSecondary,
+      marginBottom: spacing.md,
+    },
+    jarActions: {
+      flexDirection: "row",
+      gap: spacing.sm,
+    },
+    actionButton: {
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.xs,
+      borderRadius: 16,
+      backgroundColor: colors.primary + "10",
+    },
+    actionButtonText: {
+      ...typography.caption,
+      color: colors.primary,
+      fontWeight: "600",
+    },
+
     // Modal Styles
     modalOverlay: {
       flex: 1,

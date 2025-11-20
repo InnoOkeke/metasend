@@ -14,7 +14,7 @@ const CreatePaymentRequestSchema = z.object({
   creatorName: z.string().optional(),
   amount: z.string(),
   token: z.string(),
-  chain: z.enum(["evm", "solana", "tron"]),
+  chain: z.enum(["base"]),
   description: z.string(),
   payerEmail: z.string().email().optional(),
   expiresInDays: z.number().optional(),

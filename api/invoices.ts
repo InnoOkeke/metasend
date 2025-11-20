@@ -29,7 +29,7 @@ const CreateInvoiceSchema = z.object({
   taxRate: z.string().optional(),
   total: z.string(),
   token: z.string(),
-  chain: z.enum(["evm", "solana", "tron"]),
+  chain: z.enum(["base"]),
   dueDate: z.string(),
   notes: z.string().optional(),
 });

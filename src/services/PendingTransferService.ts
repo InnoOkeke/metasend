@@ -38,7 +38,7 @@ export const CreatePendingTransferSchema = z.object({
   amount: z.string(),
   token: z.string(),
   tokenAddress: z.string(),
-  chain: z.enum(["evm", "solana", "tron"]),
+  chain: z.enum(["base"]),
   decimals: z.number(),
   message: z.string().optional(),
 });
@@ -108,13 +108,13 @@ class PendingTransferService {
             body: JSON.stringify(request),
           }
         );
-        
+
         // If API returns 202 (processing), create a placeholder transfer
         if (result.status === "processing" && !result.transfer) {
           const transferId = `pending_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
           const now = new Date();
           const expiresAt = new Date(now.getTime() + this.EXPIRY_DAYS * 24 * 60 * 60 * 1000);
-          
+
           return {
             transferId,
             recipientEmail: request.recipientEmail.toLowerCase(),
@@ -137,7 +137,7 @@ class PendingTransferService {
             expiresAt: expiresAt.toISOString(),
           };
         }
-        
+
         return result.transfer!;
       } catch (error) {
         // Error will be logged at UI layer
@@ -147,7 +147,7 @@ class PendingTransferService {
 
     console.log("⏱️ createPendingTransfer - Start");
     const startTime = Date.now();
-    
+
     const validated = CreatePendingTransferSchema.parse(request);
     console.log(`⏱️ Schema parse: ${Date.now() - startTime}ms`);
 
@@ -205,12 +205,12 @@ class PendingTransferService {
     // Get sender details and send emails in background (fire-and-forget)
     (senderProfile ? Promise.resolve(senderProfile) : userDirectoryService.getUserProfile(validated.senderUserId))
       .then((sender) => {
-      if (!sender) {
-        console.warn("⚠️ Sender not found for background processing");
-        return;
-      }
+        if (!sender) {
+          console.warn("⚠️ Sender not found for background processing");
+          return;
+        }
 
-      // Send invite email (fire-and-forget)
+        // Send invite email (fire-and-forget)
         return Promise.allSettled([
           emailNotificationService.sendInviteWithPendingTransfer(
             validated.recipientEmail,
@@ -258,7 +258,7 @@ class PendingTransferService {
     }
 
     const transfers = await mongoDatabase.getPendingTransfersByRecipientEmail(recipientEmail);
-    
+
     return transfers.map((transfer) => ({
       transferId: transfer.transferId,
       recipientEmail: transfer.recipientEmail,
@@ -286,7 +286,7 @@ class PendingTransferService {
     }
 
     const transfers = await mongoDatabase.getPendingTransfersBySender(senderUserId);
-    
+
     return transfers
       .filter((t) => t.status === "pending")
       .map((transfer) => ({
@@ -325,7 +325,7 @@ class PendingTransferService {
 
     console.log(`[PendingTransferService] Attempting to claim transfer: ${transferId}`);
     const transfer = await mongoDatabase.getPendingTransferById(transferId);
-    
+
     if (!transfer) {
       console.error(`[PendingTransferService] Transfer not found: ${transferId}`);
       throw new Error("Pending transfer not found");
@@ -425,7 +425,7 @@ class PendingTransferService {
     }
 
     const transfer = await mongoDatabase.getPendingTransferById(transferId);
-    
+
     if (!transfer) {
       throw new Error("Pending transfer not found");
     }

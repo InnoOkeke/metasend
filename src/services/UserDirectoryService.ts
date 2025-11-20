@@ -22,9 +22,7 @@ export type UserProfile = {
   displayName?: string;
   avatar?: string;
   wallets: {
-    evm?: string;
-    solana?: string;
-    tron?: string;
+    base?: string;
   };
   isVerified: boolean;
 };
@@ -33,9 +31,7 @@ export type UserWalletsResult = {
   userId: string;
   email: string;
   wallets: {
-    evm?: string;
-    solana?: string;
-    tron?: string;
+    base?: string;
   };
   hasWalletForChain: (chain: ChainType) => boolean;
 };
@@ -235,7 +231,7 @@ class UserDirectoryService {
   }): Promise<UserProfile> {
     // Normalize email to lowercase before registration
     const normalizedEmail = data.email.toLowerCase().trim();
-    
+
     if (this.useRemoteApi) {
       try {
         const response = await this.request<{ success: boolean; user: User }>("/api/users", {
@@ -259,7 +255,7 @@ class UserDirectoryService {
           email: normalizedEmail,
           emailVerified: data.emailVerified,
           wallets: {
-            evm: data.walletAddress,
+            base: data.walletAddress,
           },
           profile: {
             displayName: data.displayName,
@@ -279,7 +275,7 @@ class UserDirectoryService {
       email: normalizedEmail,
       emailVerified: data.emailVerified,
       wallets: {
-        evm: data.walletAddress,
+        base: data.walletAddress,
       },
       profile: {
         displayName: data.displayName,

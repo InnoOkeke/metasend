@@ -21,7 +21,7 @@ const getApiBaseUrl = () => {
 export const CreatePaymentRequestSchema = z.object({
   amount: z.string(),
   token: z.string(),
-  chain: z.enum(["evm", "solana", "tron"]),
+  chain: z.enum(["base"]),
   description: z.string().min(1).max(500),
   payerEmail: z.string().email().optional(),
   expiresInDays: z.number().optional().default(7),

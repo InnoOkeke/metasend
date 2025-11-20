@@ -3,6 +3,10 @@
   "outputDirectory": "api",
   "rewrites": [
     {
+      "source": "/",
+      "destination": "/api/index"
+    },
+    {
       "source": "/.well-known/apple-app-site-association",
       "destination": "/public/.well-known/apple-app-site-association"
     },

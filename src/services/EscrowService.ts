@@ -161,6 +161,56 @@ class EscrowService {
     };
   }
 
+  /**
+   * Get the current status of a transfer from blockchain
+   * Status codes: 0 = pending, 1 = claimed, 2 = refunded/cancelled
+   */
+  async getTransferStatus(transferId: string): Promise<'pending' | 'claimed' | 'cancelled' | null> {
+    const snapshot = await this.getOnchainTransfer(transferId);
+    if (!snapshot) {
+      return null;
+    }
+
+    // Map status codes from contract
+    switch (snapshot.status) {
+      case 0:
+        return 'pending';
+      case 1:
+        return 'claimed';
+      case 2:
+        return 'cancelled';
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * Check if a transfer can be claimed
+   */
+  async isTransferClaimable(transferId: string): Promise<boolean> {
+    const snapshot = await this.getOnchainTransfer(transferId);
+    if (!snapshot) {
+      return false;
+    }
+
+    // Can claim if status is pending (0) and not expired
+    const now = Math.floor(Date.now() / 1000);
+    return snapshot.status === 0 && snapshot.expiry > now;
+  }
+
+  /**
+   * Check if a transfer can be cancelled/refunded
+   */
+  async isTransferCancellable(transferId: string): Promise<boolean> {
+    const snapshot = await this.getOnchainTransfer(transferId);
+    if (!snapshot) {
+      return false;
+    }
+
+    // Can cancel if status is pending (0)
+    return snapshot.status === 0;
+  }
+
   isMockMode() {
     return this.IS_MOCK_MODE;
   }

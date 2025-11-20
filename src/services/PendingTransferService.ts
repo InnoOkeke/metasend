@@ -406,6 +406,70 @@ class PendingTransferService {
   }
 
   /**
+   * Sync a single transfer's status with blockchain
+   */
+  async syncTransferStatus(transferId: string): Promise<void> {
+    if (this.useRemoteApi) {
+      // Remote API will handle sync
+      return;
+    }
+
+    const transfer = await mongoDatabase.getPendingTransferById(transferId);
+    if (!transfer || !transfer.escrowTransferId) {
+      console.warn(`Cannot sync transfer ${transferId}: missing escrow ID`);
+      return;
+    }
+
+    try {
+      // Get actual blockchain status
+      const blockchainStatus = await escrowService.getTransferStatus(transfer.escrowTransferId);
+
+      if (!blockchainStatus) {
+        console.warn(`Cannot determine blockchain status for transfer ${transferId}`);
+        return;
+      }
+
+      // Update database if status differs
+      if (transfer.status !== blockchainStatus) {
+        console.log(`Syncing transfer ${transferId}: ${transfer.status} → ${blockchainStatus}`);
+        // Map blockchain status to database status
+        const dbStatus = blockchainStatus === 'cancelled' ? 'refunded' : blockchainStatus;
+        await mongoDatabase.updatePendingTransfer(transferId, {
+          status: dbStatus as any,
+          escrowStatus: dbStatus as any,
+        });
+      }
+    } catch (error) {
+      console.error(`Failed to sync transfer ${transferId}:`, error);
+    }
+  }
+
+  /**
+   * Sync all pending transfers for a user with blockchain
+   */
+  async syncAllPendingTransfers(senderUserId: string): Promise<number> {
+    if (this.useRemoteApi) {
+      // Remote API will handle sync
+      return 0;
+    }
+
+    const transfers = await mongoDatabase.getPendingTransfersBySender(senderUserId);
+    const pendingTransfers = transfers.filter(t => t.status === 'pending');
+
+    let syncedCount = 0;
+    for (const transfer of pendingTransfers) {
+      try {
+        await this.syncTransferStatus(transfer.transferId);
+        syncedCount++;
+      } catch (error) {
+        console.error(`Failed to sync transfer ${transfer.transferId}:`, error);
+      }
+    }
+
+    return syncedCount;
+  }
+
+  /**
    * Cancel a pending transfer (sender only)
    */
   async cancelPendingTransfer(transferId: string, senderUserId: string): Promise<string> {
@@ -424,6 +488,10 @@ class PendingTransferService {
       return result.refundTransactionHash;
     }
 
+    // Sync status with blockchain first
+    await this.syncTransferStatus(transferId);
+
+    // Re-fetch transfer to get updated status
     const transfer = await mongoDatabase.getPendingTransferById(transferId);
 
     if (!transfer) {
@@ -435,7 +503,7 @@ class PendingTransferService {
     }
 
     if (transfer.status !== "pending") {
-      throw new Error(`Transfer is already ${transfer.status}`);
+      throw new Error(`Cannot cancel: transfer is already ${transfer.status}`);
     }
 
     // Get sender wallet
@@ -447,6 +515,15 @@ class PendingTransferService {
     const escrowTransferId = transfer.escrowTransferId;
     if (!escrowTransferId) {
       throw new Error("Transfer is not yet registered on shared escrow. Please contact support.");
+    }
+
+    // Verify on blockchain that it's cancellable
+    const isCancellable = await escrowService.isTransferCancellable(escrowTransferId);
+    if (!isCancellable) {
+      // Sync again to update status
+      await this.syncTransferStatus(transferId);
+      const updated = await mongoDatabase.getPendingTransferById(transferId);
+      throw new Error(`Transfer cannot be cancelled - it has been ${updated?.status || 'claimed'}. The status has been updated.`);
     }
 
     const refundReceipt = await escrowService.refundOnchainTransfer(escrowTransferId, senderWallet);

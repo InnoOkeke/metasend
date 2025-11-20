@@ -1,65 +1,47 @@
 {
-  "rewrites": [
+  "version": 2,
+  "builds": [
     {
-      "source": "/",
-      "destination": "/api/index"
-    },
-    {
-      "source": "/.well-known/apple-app-site-association",
-      "destination": "/public/.well-known/apple-app-site-association"
-    },
-    {
-      "source": "/.well-known/assetlinks.json",
-      "destination": "/public/.well-known/assetlinks.json"
-    },
-    {
-      "source": "/claim/:transferId",
-      "destination": "/api/web/claim/:transferId"
-    },
-    {
-      "source": "/pay/:requestId",
-      "destination": "/api/web/pay/:requestId"
-    },
-    {
-      "source": "/gift/:giftId",
-      "destination": "/api/web/gift/:giftId"
-    },
-    {
-      "source": "/gifts/:giftId",
-      "destination": "/api/web/gift/:giftId"
-    },
-    {
-      "source": "/tip/:jarId",
-      "destination": "/api/web/tip/:jarId"
-    },
-    {
-      "source": "/tipjar/:jarId",
-      "destination": "/api/web/tip/:jarId"
+      "src": "api/**/*.ts",
+      "use": "@vercel/node"
     }
   ],
-  "headers": [
+  "routes": [
     {
-      "source": "/.well-known/(.*)",
-      "headers": [
-        {
-          "key": "Content-Type",
-          "value": "application/json"
-        },
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=3600"
-        }
-      ]
-    }
-  ],
-  "crons": [
-    {
-      "path": "/api/cron/process-expiry",
-      "schedule": "0 0 * * *"
+      "src": "/",
+      "dest": "/api/index"
     },
     {
-      "path": "/api/cron/send-reminders",
-      "schedule": "0 12 * * *"
+      "src": "/.well-known/apple-app-site-association",
+      "dest": "/public/.well-known/apple-app-site-association"
+    },
+    {
+      "src": "/.well-known/assetlinks.json",
+      "dest": "/public/.well-known/assetlinks.json"
+    },
+    {
+      "src": "/claim/(.*)",
+      "dest": "/api/web?transferId=$1&type=claim"
+    },
+    {
+      "src": "/pay/(.*)",
+      "dest": "/api/web?requestId=$1&type=pay"
+    },
+    {
+      "src": "/gift/(.*)",
+      "dest": "/api/web?giftId=$1&type=gift"
+    },
+    {
+      "src": "/gifts/(.*)",
+      "dest": "/api/web?giftId=$1&type=gift"
+    },
+    {
+      "src": "/tip/(.*)",
+      "dest": "/api/web?jarId=$1&type=tip"
+    },
+    {
+      "src": "/tipjar/(.*)",
+      "dest": "/api/web?jarId=$1&type=tip"
     }
   ]
 }

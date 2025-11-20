@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -8,6 +8,9 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Modal,
+  Pressable,
+  BackHandler,
 } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -32,47 +35,52 @@ import {
   InternationalTransferService,
   RecipientDetails,
 } from "../../services/InternationalTransferService";
+// Inline step render functions are used in this file; removed split step imports
 
 const STEP_TITLES = [
   "Destination",
   "Amount",
   "Provider",
-  "Payment Method",
+  "Payout Method",
   "Recipient",
   "Review",
 ];
 
-const payoutLabels: Record<PayoutMethod, string> = {
+const payoutLabels: Record<string, string> = {
   bank_account: "Bank account",
   mobile_money: "Mobile money",
   cash_pickup: "Cash pickup",
   crypto_wallet: "Crypto wallet",
-};
-
-const fundingLabels: Record<FundingMethod, string> = {
   ach: "ACH bank",
-  bank_transfer: "Bank transfer",
-  debit_card: "Debit card",
   credit_card: "Credit card",
-  crypto_wallet: "Crypto wallet",
 };
+type ProviderQuote = Awaited<ReturnType<typeof InternationalTransferService.getQuotes>>[number];
+// Funding no longer selectable in the UI — users fund via their crypto wallet only.
+// Removed fundingLabels as funding is now always via crypto wallet.
 
 type Props = NativeStackScreenProps<RootStackParamList, "InternationalTransfer">;
 
 type RecipientField = {
-  key: keyof RecipientDetails;
+  key: string;
   label: string;
   placeholder?: string;
   required?: boolean;
 };
 
-const RECIPIENT_FIELDS: Record<PayoutMethod, RecipientField[]> = {
+const RECIPIENT_FIELDS: Record<string, RecipientField[]> = {
   bank_account: [
     { key: "fullName", label: "Recipient full name", placeholder: "Jane Doe", required: true },
-    { key: "bankName", label: "Bank name", placeholder: "Zenith Bank", required: true },
+    { key: "bankName", label: "Bank name", placeholder: "Bank of America", required: true },
     { key: "accountNumber", label: "Account number", placeholder: "0123456789", required: true },
     { key: "iban", label: "IBAN / Routing", placeholder: "Optional" },
     { key: "swift", label: "SWIFT / Sort code", placeholder: "Optional" },
+    { key: "email", label: "Contact email", placeholder: "recipient@example.com" },
+  ],
+  ach: [
+    { key: "fullName", label: "Recipient full name", placeholder: "Jane Doe", required: true },
+    { key: "bankName", label: "Bank name", placeholder: "Bank of America", required: true },
+    { key: "accountNumber", label: "Account number", placeholder: "0123456789", required: true },
+    { key: "routingNumber", label: "Routing number", placeholder: "Optional" },
     { key: "email", label: "Contact email", placeholder: "recipient@example.com" },
   ],
   mobile_money: [
@@ -89,12 +97,21 @@ const RECIPIENT_FIELDS: Record<PayoutMethod, RecipientField[]> = {
     { key: "fullName", label: "Recipient name (optional)" },
     { key: "accountNumber", label: "Wallet address", placeholder: "0x...", required: true },
   ],
+  credit_card: [
+    { key: "fullName", label: "Cardholder full name", placeholder: "Jane Doe", required: true },
+    { key: "cardNumber", label: "Card number", placeholder: "4111 1111 1111 1111", required: true },
+    { key: "expiry", label: "Expiry (MM/YY)", placeholder: "05/28", required: true },
+    { key: "cvv", label: "CVV", placeholder: "123", required: true },
+    { key: "email", label: "Contact email", placeholder: "recipient@example.com" },
+  ],
 };
 
-export const InternationalTransferScreen: React.FC<Props> = ({ navigation }) => {
+export const InternationalTransferScreen: React.FC<Props> = ({ navigation, route }) => {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [stepIndex, setStepIndex] = useState(0);
+  const [showPayoutModal, setShowPayoutModal] = useState(false);
+  
   const [search, setSearch] = useState("");
   const [amountInput, setAmountInput] = useState("");
   const [draft, setDraft] = useState<InternationalTransferDraft>({});
@@ -149,6 +166,14 @@ export const InternationalTransferScreen: React.FC<Props> = ({ navigation }) => 
     mutationFn: InternationalTransferService.submitTransfer,
     onSuccess: (result) => {
       showToast(`Transfer submitted via ${result.providerId}. Reference ${result.referenceCode ?? "pending"}.`, "success");
+      // After a successful transfer, prefer to go back to the opener instead of navigating home.
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+      } else if (route?.params && (route.params as any).returnTo) {
+        const rt = (route.params as any).returnTo;
+        const rtParams = (route.params as any).returnToParams;
+        navigation.navigate(rt as any, rtParams);
+      }
     },
     onError: (error) => {
       showToast(error instanceof Error ? error.message : "Transfer failed", "error");
@@ -169,18 +194,24 @@ export const InternationalTransferScreen: React.FC<Props> = ({ navigation }) => 
   };
 
   const handleSelectProvider = (provider: ProviderConfig) => {
-    setDraft((prev) => ({ ...prev, providerId: provider.id }));
+    // Auto-select a sensible payout method from the provider based on region
+    const defaultPayout = provider.payoutMethods?.[0];
+    setDraft((prev) => ({
+      ...prev,
+      providerId: provider.id,
+      payoutMethod: defaultPayout,
+      // funding is fixed to crypto wallet
+      fundingMethod: "crypto_wallet",
+    }));
   };
 
   const handleSelectPayoutMethod = (method: PayoutMethod) => {
     setDraft((prev) => ({ ...prev, payoutMethod: method }));
   };
 
-  const handleSelectFundingMethod = (method: FundingMethod) => {
-    setDraft((prev) => ({ ...prev, fundingMethod: method }));
-  };
+  // Funding selection removed; users fund via crypto wallet only.
 
-  const updateRecipientField = (key: keyof RecipientDetails, value: string) => {
+  const updateRecipientField = (key: string, value: string) => {
     setRecipientErrors((prev) => ({ ...prev, [key]: "" }));
     setDraft((prev) => ({
       ...prev,
@@ -194,7 +225,7 @@ export const InternationalTransferScreen: React.FC<Props> = ({ navigation }) => 
   const validateRecipientDetails = () => {
     if (!draft.payoutMethod) return false;
     const fields = RECIPIENT_FIELDS[draft.payoutMethod];
-    const details: RecipientDetails = draft.recipientDetails ?? {};
+    const details: Record<string, any> = draft.recipientDetails ?? {};
     const nextErrors: Record<string, string> = {};
 
     fields.forEach((field) => {
@@ -214,11 +245,37 @@ export const InternationalTransferScreen: React.FC<Props> = ({ navigation }) => 
 
   const goBack = () => {
     if (stepIndex === 0) {
-      navigation.goBack();
+      // Prefer popping the navigation stack when possible
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+      } else if (route?.params && (route.params as any).returnTo) {
+        // If the opener provided a return route, navigate there
+        const rt = (route.params as any).returnTo;
+        const rtParams = (route.params as any).returnToParams;
+        navigation.navigate(rt as any, rtParams);
+      } else {
+        // No known previous route — do nothing to avoid jumping to home unexpectedly
+        // Optionally you could navigate to a safe default here.
+      }
       return;
     }
     setStepIndex((prev) => prev - 1);
   };
+
+  // Handle Android hardware back button to navigate between steps.
+  useEffect(() => {
+    const onBackPress = () => {
+      if (stepIndex > 0) {
+        goBack();
+        return true; // handled
+      }
+      // allow default behavior (pop stack)
+      return false;
+    };
+
+    const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+    return () => subscription.remove();
+  }, [stepIndex]);
 
   const handleContinueFromStep = () => {
     switch (stepIndex) {
@@ -241,34 +298,48 @@ export const InternationalTransferScreen: React.FC<Props> = ({ navigation }) => 
           showToast("Choose a provider", "error");
           return;
         }
-        goNext();
+        // Open payout modal so user can pick a payout method (compact UX)
+        setShowPayoutModal(true);
         break;
       case 3:
-        if (!draft.payoutMethod || !draft.fundingMethod) {
-          showToast("Select payout and payment methods", "error");
-          return;
-        }
-        goNext();
-        break;
-      case 4:
+        // Recipient step validation
         if (!validateRecipientDetails()) {
           showToast("Fill in recipient details", "error");
           return;
         }
         goNext();
         break;
+      case 4:
+        // Review step (final) — nothing to validate here
+        break;
       default:
         break;
     }
   };
 
+  // Funding is not selectable; users fund via crypto wallet.
+
   const handleSubmitTransfer = () => {
-    if (!draft.destinationCountry || !draft.amountUsd || !draft.providerId || !draft.payoutMethod || !draft.fundingMethod) {
+    if (!draft.destinationCountry || !draft.amountUsd || !draft.providerId || !draft.payoutMethod) {
       showToast("Complete all steps before sending", "error");
       return;
     }
 
     transferMutation.mutate(draft);
+  };
+
+  const handlePayoutSelect = (method: PayoutMethod | string) => {
+    setDraft((prev) => ({ ...prev, payoutMethod: method as PayoutMethod }));
+  };
+
+  const handlePayoutModalContinue = () => {
+    if (!draft.payoutMethod) {
+      showToast("Choose a payout method", "error");
+      return;
+    }
+    setShowPayoutModal(false);
+    // go directly to recipient step
+    setStepIndex(4);
   };
 
   const renderCountryStep = () => (
@@ -301,7 +372,7 @@ export const InternationalTransferScreen: React.FC<Props> = ({ navigation }) => 
   );
 
   const renderAmountStep = () => (
-    <>
+    <ScrollView contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 0 }} keyboardShouldPersistTaps="handled">
       <TextField
         label="Amount in USD"
         keyboardType="decimal-pad"
@@ -324,7 +395,7 @@ export const InternationalTransferScreen: React.FC<Props> = ({ navigation }) => 
           <Text style={styles.infoMeta}>FX ~ 1 USD = {fxRate.toFixed(2)} {draft.destinationCountry.currency}</Text>
         </View>
       )}
-    </>
+    </ScrollView>
   );
 
   const renderProviderStep = () => (
@@ -359,17 +430,37 @@ export const InternationalTransferScreen: React.FC<Props> = ({ navigation }) => 
                 <Text style={styles.providerMeta}>Fee ≈ ${quote.totalFeeUsd.toFixed(2)}</Text>
                 <Text style={styles.providerMeta}>ETA {quote.deliveryEtaHours}h</Text>
               </View>
+              {selected ? (
+                <View style={styles.quoteDetails}>
+                  <Text style={styles.sectionTitle}>Quotes</Text>
+                  <View style={{ marginTop: spacing.sm }}>
+                    <Text style={styles.providerMeta}>Fee ≈ ${quote.totalFeeUsd.toFixed(2)}</Text>
+                    <Text style={styles.providerMeta}>ETA {quote.deliveryEtaHours}h</Text>
+                  </View>
+                  <Text style={[styles.sectionTitle, { marginTop: spacing.md }]}>Available payout methods</Text>
+                  <View style={[styles.chipGroup, { marginTop: spacing.sm }]}> 
+                    {(quote.provider.payoutMethods ?? []).map((method) => (
+                      <View key={method} style={styles.payoutListItem}>
+                        <Text style={styles.chipLabel}>{payoutLabels[method] ?? method}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              ) : null}
             </TouchableOpacity>
           );
         })
       )}
+        {/* If a provider is selected show available payout methods inline (we removed the separate payout screen)
+            Funding (payment) methods remain in the modal. */}
+        {/* payout options moved into modal; quotes are shown inline inside the provider card when selected */}
     </ScrollView>
   );
 
   const renderPaymentStep = () => (
     <View style={styles.methodContainer}>
       <Text style={styles.sectionTitle}>Payout method</Text>
-      <View style={styles.chipGroup}>
+      <View style={[styles.chipGroup, { marginTop: spacing.sm }]}> 
         {(selectedProvider?.payoutMethods ?? []).map((method) => {
           const selected = draft.payoutMethod === method;
           return (
@@ -385,26 +476,12 @@ export const InternationalTransferScreen: React.FC<Props> = ({ navigation }) => 
           );
         })}
       </View>
-
-      <Text style={[styles.sectionTitle, { marginTop: spacing.lg }]}>Payment method</Text>
-      <View style={styles.chipGroup}>
-        {(selectedProvider?.fundingMethods ?? []).map((method) => {
-          const selected = draft.fundingMethod === method;
-          return (
-            <TouchableOpacity
-              key={method}
-              style={[styles.chip, selected && styles.chipSelected]}
-              onPress={() => handleSelectFundingMethod(method)}
-            >
-              <Text style={[styles.chipLabel, selected && styles.chipLabelSelected]}>
-                {fundingLabels[method]}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
     </View>
   );
+
+  // Funding selection removed; users will fund via their crypto wallet only.
+
+  
 
   const renderRecipientStep = () => {
     if (!draft.payoutMethod) {
@@ -420,27 +497,38 @@ export const InternationalTransferScreen: React.FC<Props> = ({ navigation }) => 
 
     const fields = RECIPIENT_FIELDS[draft.payoutMethod];
     return (
-      <View style={styles.recipientForm}>
-        {fields.map((field) => (
-          <View key={field.key}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 110 : 80}
+        style={{ flex: 1 }}
+      >
+        <ScrollView
+          contentContainerStyle={{ paddingBottom: spacing.lg * 6 }}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.recipientForm}>
+            {fields.map((field) => (
+              <View key={field.key}>
+                <TextField
+                  label={field.label}
+                  value={(draft.recipientDetails as any)?.[field.key] ?? ""}
+                  placeholder={field.placeholder}
+                  onChangeText={(value) => updateRecipientField(field.key, value)}
+                />
+                {recipientErrors[field.key] ? (
+                  <Text style={styles.errorText}>{recipientErrors[field.key]}</Text>
+                ) : null}
+              </View>
+            ))}
             <TextField
-              label={field.label}
-              value={draft.recipientDetails?.[field.key] ?? ""}
-              placeholder={field.placeholder}
-              onChangeText={(value) => updateRecipientField(field.key, value)}
+              label="Reference / note (optional)"
+              value={draft.note ?? ""}
+              onChangeText={(value) => setDraft((prev) => ({ ...prev, note: value }))}
+              multiline
             />
-            {recipientErrors[field.key] ? (
-              <Text style={styles.errorText}>{recipientErrors[field.key]}</Text>
-            ) : null}
           </View>
-        ))}
-        <TextField
-          label="Reference / note (optional)"
-          value={draft.note ?? ""}
-          onChangeText={(value) => setDraft((prev) => ({ ...prev, note: value }))}
-          multiline
-        />
-      </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     );
   };
 
@@ -470,7 +558,7 @@ export const InternationalTransferScreen: React.FC<Props> = ({ navigation }) => 
       <View style={styles.reviewRow}>
         <Text style={styles.reviewLabel}>Methods</Text>
         <Text style={styles.reviewValue}>
-          {draft.payoutMethod ? payoutLabels[draft.payoutMethod] : ""} via {draft.fundingMethod ? fundingLabels[draft.fundingMethod] : ""}
+          {draft.payoutMethod ? payoutLabels[draft.payoutMethod] : ""} — funded via Crypto wallet
         </Text>
       </View>
       <PrimaryButton
@@ -516,7 +604,7 @@ export const InternationalTransferScreen: React.FC<Props> = ({ navigation }) => 
 
         <View style={styles.content}>{renderStepContent()}</View>
 
-        {stepIndex < STEP_TITLES.length - 1 && stepIndex !== 5 && (
+        {stepIndex < STEP_TITLES.length - 1 && (
           <View style={styles.footer}>
             <PrimaryButton title="Continue" onPress={handleContinueFromStep} />
           </View>
@@ -529,6 +617,49 @@ export const InternationalTransferScreen: React.FC<Props> = ({ navigation }) => 
           <Text style={styles.loadingText}>Connecting to provider…</Text>
         </View>
       )}
+
+      {/* Funding via crypto wallet only — no modal required */}
+
+      <Modal
+        visible={showPayoutModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowPayoutModal(false)}
+        statusBarTranslucent
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContentSmall}>
+            <View style={styles.modalHeaderSmall}>
+              <Text style={styles.modalTitleSmall}>Choose payout method</Text>
+              <Pressable onPress={() => setShowPayoutModal(false)} style={styles.modalCloseSmall}>
+                <Text style={styles.modalCloseTextSmall}>✕</Text>
+              </Pressable>
+            </View>
+
+            <ScrollView contentContainerStyle={styles.modalBodySmall} keyboardShouldPersistTaps="handled">
+              <Text style={styles.sectionTitle}>Payout method</Text>
+              <View style={[styles.chipGroup, { marginTop: spacing.sm }]}> 
+                {(selectedProvider?.payoutMethods ?? []).map((method) => {
+                  const selected = draft.payoutMethod === method;
+                  return (
+                    <TouchableOpacity
+                      key={method}
+                      style={[styles.chip, selected && styles.chipSelected]}
+                      onPress={() => handlePayoutSelect(method)}
+                    >
+                      <Text style={[styles.chipLabel, selected && styles.chipLabelSelected]}>{payoutLabels[method]}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <View style={{ marginTop: spacing.lg }}>
+                <PrimaryButton title="Continue" onPress={handlePayoutModalContinue} />
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       <ToastModal visible={toast.visible} message={toast.message} type={toast.type} onDismiss={hideToast} />
     </View>
@@ -762,4 +893,57 @@ const createStyles = (colors: ColorPalette) =>
       color: "#fff",
       fontWeight: "600",
     },
-  });
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: "rgba(0, 0, 0, 0.5)",
+      justifyContent: "flex-end",
+    },
+    modalContentSmall: {
+      backgroundColor: colors.cardBackground,
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      maxHeight: "85%",
+    },
+    modalHeaderSmall: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.lg,
+      paddingBottom: spacing.md,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    modalTitleSmall: {
+      ...typography.subtitle,
+      color: colors.textPrimary,
+    },
+    modalCloseSmall: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: colors.background,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    modalCloseTextSmall: {
+      fontSize: 16,
+      color: colors.textPrimary,
+    },
+    modalBodySmall: {
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.lg,
+    },
+    quoteDetails: {
+      marginTop: spacing.md,
+      padding: spacing.md,
+      borderRadius: 12,
+      backgroundColor: colors.cardBackground,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    payoutListItem: {
+      paddingVertical: spacing.xs,
+    },
+      
+    });

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Pressable, Alert, Share, Clipboard, KeyboardAvoidingView, Platform } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Pressable, Alert, Share, Clipboard, Platform } from "react-native";
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useMutation } from "@tanstack/react-query";
@@ -102,7 +102,7 @@ export const TippingScreen: React.FC<Props> = () => {
 
   return (
     <>
-      <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
+      <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
           <Text style={styles.headerTitle}>💸 Micro-Tipping</Text>
           <Text style={styles.headerSubtitle}>
@@ -139,10 +139,7 @@ export const TippingScreen: React.FC<Props> = () => {
         onRequestClose={() => setShowCreateModal(false)}
         statusBarTranslucent
       >
-        <KeyboardAvoidingView 
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-          style={styles.modalOverlay}
-        >
+        <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Create Tip Jar</Text>
@@ -151,7 +148,13 @@ export const TippingScreen: React.FC<Props> = () => {
               </Pressable>
             </View>
 
-            <KeyboardAwareScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled" enableAutomaticScroll extraScrollHeight={Platform.OS === 'ios' ? 20 : 80}>
+            <KeyboardAwareScrollView
+              contentContainerStyle={[styles.modalBody, { flexGrow: 1 }]}
+              keyboardShouldPersistTaps="handled"
+              enableAutomaticScroll
+              enableOnAndroid
+              extraScrollHeight={Platform.OS === 'ios' ? 40 : 120}
+            >
               <TextField
                 label="Title *"
                 value={form.title}
@@ -201,7 +204,7 @@ export const TippingScreen: React.FC<Props> = () => {
               />
             </KeyboardAwareScrollView>
           </View>
-        </KeyboardAvoidingView>
+        </View>
       </Modal>
     </>
   );

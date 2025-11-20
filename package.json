@@ -66,6 +66,7 @@
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@react-native-community/cli": "latest",
     "@types/react": "~19.1.0",
     "babel-preset-expo": "^54.0.7",
     "hardhat": "^2.22.5",

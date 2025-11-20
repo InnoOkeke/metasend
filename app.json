@@ -7,7 +7,7 @@
     "icon": "./assets/AppIcons/appstore.png",
     "scheme": "metasend",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "splash": {
       "image": "./assets/logo.png",
       "resizeMode": "contain",

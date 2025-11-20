@@ -1,15 +1,16 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { Request, Response, Router } from "express";
 import { z } from "zod";
 import mongoDatabase from "../src/services/mongoDatabase";
 import type { TransferRecord } from "../src/types/transfers";
 
-const authorize = (req: VercelRequest): boolean => {
+const router = Router();
+const authorize = (req: Request): boolean => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return false;
   return authHeader === `Bearer ${process.env.METASEND_API_KEY}`;
 };
 
-const badRequest = (res: VercelResponse, message: string) =>
+const badRequest = (res: Response, message: string) =>
   res.status(400).json({ success: false, error: message });
 
 const TransferIntentSchema = z.object({
@@ -39,46 +40,53 @@ type ListFilter = {
   limit?: number;
 };
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+router.get('/', async (req: Request, res: Response) => {
   if (!authorize(req)) {
     return res.status(401).json({ success: false, error: "Unauthorized" });
   }
-
   try {
     const db = mongoDatabase;
-
-    if (req.method === "GET") {
-      const filter: ListFilter = {};
-      if (typeof req.query.senderWallet === "string") {
-        filter.senderWallet = req.query.senderWallet;
-      }
-      if (typeof req.query.senderUserId === "string") {
-        filter.senderUserId = req.query.senderUserId;
-      }
-      if (typeof req.query.limit === "string") {
-        const parsedLimit = Number(req.query.limit);
-        if (!Number.isNaN(parsedLimit)) {
-          filter.limit = parsedLimit;
-        }
-      }
-
-      if (!filter.senderWallet && !filter.senderUserId) {
-        return badRequest(res, "Provide senderWallet or senderUserId");
-      }
-
-      const transfers = await db.listTransferRecords(filter);
-      return res.status(200).json({ success: true, transfers });
+    const filter: ListFilter = {};
+    if (typeof req.query.senderWallet === "string") {
+      filter.senderWallet = req.query.senderWallet;
     }
-
-    if (req.method === "POST") {
-      const parsed = TransferRecordSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return badRequest(res, parsed.error.message);
-      }
-
-      await db.saveTransferRecord(parsed.data as TransferRecord);
-      return res.status(201).json({ success: true, transfer: parsed.data });
+    if (typeof req.query.senderUserId === "string") {
+      filter.senderUserId = req.query.senderUserId;
     }
+    if (typeof req.query.limit === "string") {
+      const parsedLimit = Number(req.query.limit);
+      if (!Number.isNaN(parsedLimit)) {
+        filter.limit = parsedLimit;
+      }
+    }
+    if (!filter.senderWallet && !filter.senderUserId) {
+      return badRequest(res, "Provide senderWallet or senderUserId");
+    }
+    const transfers = await db.listTransferRecords(filter);
+    return res.status(200).json({ success: true, transfers });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: "Internal server error" });
+  }
+});
+
+router.post('/', async (req: Request, res: Response) => {
+  if (!authorize(req)) {
+    return res.status(401).json({ success: false, error: "Unauthorized" });
+  }
+  try {
+    const db = mongoDatabase;
+    const parsed = TransferRecordSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return badRequest(res, parsed.error.message);
+    }
+    await db.saveTransferRecord(parsed.data as TransferRecord);
+    return res.status(201).json({ success: true, transfer: parsed.data });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: "Internal server error" });
+  }
+});
+
+export default router;
 
     res.setHeader("Allow", ["GET", "POST"]);
     return res.status(405).json({ success: false, error: "Method not allowed" });

@@ -3,7 +3,7 @@
  * Handles creating, retrieving, and managing payment requests
  */
 
-import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { Request, Response, Router } from "express";
 import { z } from "zod";
 import mongoDb from "../src/services/mongoDatabase";
 import { PaymentRequest, PaymentRequestStatus } from "../src/types/database";
@@ -28,57 +28,61 @@ const PayPaymentRequestSchema = z.object({
   transactionHash: z.string(),
 });
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+const router = Router();
+router.get('/', async (req: Request, res: Response) => {
   try {
-    // GET - Retrieve payment requests
-    if (req.method === "GET") {
-      const { creatorUserId, payerEmail, requestId } = req.query;
-
-      if (requestId) {
-        const request = await mongoDb.getPaymentRequestById(requestId as string);
-        if (!request) {
-          return res.status(404).json({ error: "Payment request not found" });
-        }
-        return res.status(200).json(request);
+    const { creatorUserId, payerEmail, requestId } = req.query;
+    if (requestId) {
+      const request = await mongoDb.getPaymentRequestById(requestId as string);
+      if (!request) {
+        return res.status(404).json({ error: "Payment request not found" });
       }
-
-      if (creatorUserId) {
-        const requests = await mongoDb.getPaymentRequestsByCreator(creatorUserId as string);
-        return res.status(200).json(requests);
-      }
-
-      if (payerEmail) {
-        const requests = await mongoDb.getPaymentRequestsByPayer(payerEmail as string);
-        return res.status(200).json(requests);
-      }
-
-      return res.status(400).json({ error: "Missing query parameters" });
+      return res.status(200).json(request);
     }
+    if (creatorUserId) {
+      const requests = await mongoDb.getPaymentRequestsByCreator(creatorUserId as string);
+      return res.status(200).json(requests);
+    }
+    if (payerEmail) {
+      const requests = await mongoDb.getPaymentRequestsByPayer(payerEmail as string);
+      return res.status(200).json(requests);
+    }
+    return res.status(400).json({ error: "Missing query parameters" });
+  } catch (err) {
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
 
-    // POST - Create payment request
-    if (req.method === "POST") {
-      const validation = CreatePaymentRequestSchema.safeParse(req.body);
-      if (!validation.success) {
-        return res.status(400).json({ error: validation.error.errors });
-      }
+router.post('/', async (req: Request, res: Response) => {
+  try {
+    const validation = CreatePaymentRequestSchema.safeParse(req.body);
+    if (!validation.success) {
+      return res.status(400).json({ error: validation.error.errors });
+    }
+    const data = validation.data;
+    const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    const now = new Date().toISOString();
+    const expiresAt = data.expiresInDays
+      ? new Date(Date.now() + data.expiresInDays * 24 * 60 * 60 * 1000).toISOString()
+      : undefined;
+    const request: PaymentRequest = {
+      requestId,
+      creatorUserId: data.creatorUserId,
+      creatorEmail: data.creatorEmail.toLowerCase().trim(),
+      creatorName: data.creatorName,
+      amount: data.amount,
+      token: data.token,
+      chain: data.chain,
+      description: data.description,
+      // ...existing code...
+    };
+    // ...existing code for saving and returning...
+  } catch (err) {
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
 
-      const data = validation.data;
-      const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-      const now = new Date().toISOString();
-
-      const expiresAt = data.expiresInDays
-        ? new Date(Date.now() + data.expiresInDays * 24 * 60 * 60 * 1000).toISOString()
-        : undefined;
-
-      const request: PaymentRequest = {
-        requestId,
-        creatorUserId: data.creatorUserId,
-        creatorEmail: data.creatorEmail.toLowerCase().trim(),
-        creatorName: data.creatorName,
-        amount: data.amount,
-        token: data.token,
-        chain: data.chain,
-        description: data.description,
+export default router;
         payerEmail: data.payerEmail?.toLowerCase().trim(),
         status: "pending",
         createdAt: now,

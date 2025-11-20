@@ -3,7 +3,7 @@
  * Handles creating, retrieving, and managing invoices
  */
 
-import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { Request, Response, Router } from "express";
 import { z } from "zod";
 import mongoDb from "../src/services/mongoDatabase";
 import { Invoice, InvoiceStatus, InvoiceItem } from "../src/types/database";
@@ -39,157 +39,123 @@ const PayInvoiceSchema = z.object({
   transactionHash: z.string(),
 });
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+const router = Router();
+router.get('/', async (req: Request, res: Response) => {
   try {
-    // GET - Retrieve invoices
-    if (req.method === "GET") {
-      const { invoiceId, invoiceNumber, creatorUserId, clientEmail } = req.query;
-
-      if (invoiceId) {
-        const invoice = await mongoDb.getInvoiceById(invoiceId as string);
-        if (!invoice) {
-          return res.status(404).json({ error: "Invoice not found" });
-        }
-        return res.status(200).json(invoice);
-      }
-
-      if (invoiceNumber) {
-        const invoice = await mongoDb.getInvoiceByNumber(invoiceNumber as string);
-        if (!invoice) {
-          return res.status(404).json({ error: "Invoice not found" });
-        }
-        return res.status(200).json(invoice);
-      }
-
-      if (creatorUserId) {
-        const invoices = await mongoDb.getInvoicesByCreator(creatorUserId as string);
-        return res.status(200).json(invoices);
-      }
-
-      if (clientEmail) {
-        const invoices = await mongoDb.getInvoicesByClient(clientEmail as string);
-        return res.status(200).json(invoices);
-      }
-
-      return res.status(400).json({ error: "Missing query parameters" });
-    }
-
-    // POST - Create invoice
-    if (req.method === "POST") {
-      const validation = CreateInvoiceSchema.safeParse(req.body);
-      if (!validation.success) {
-        return res.status(400).json({ error: validation.error.errors });
-      }
-
-      const data = validation.data;
-      const invoiceId = `inv_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-      const now = new Date().toISOString();
-
-      // Generate invoice number (format: INV-YYYYMMDD-XXX)
-      const date = new Date();
-      const dateStr = date.toISOString().split("T")[0].replace(/-/g, "");
-      const random = Math.floor(Math.random() * 1000)
-        .toString()
-        .padStart(3, "0");
-      const invoiceNumber = `INV-${dateStr}-${random}`;
-
-      const invoice: Invoice = {
-        invoiceId,
-        invoiceNumber,
-        creatorUserId: data.creatorUserId,
-        creatorEmail: data.creatorEmail.toLowerCase().trim(),
-        creatorName: data.creatorName,
-        creatorAddress: data.creatorAddress,
-        clientEmail: data.clientEmail.toLowerCase().trim(),
-        clientName: data.clientName,
-        clientAddress: data.clientAddress,
-        items: data.items as InvoiceItem[],
-        subtotal: data.subtotal,
-        tax: data.tax,
-        taxRate: data.taxRate,
-        total: data.total,
-        token: data.token,
-        chain: data.chain,
-        status: "draft",
-        issueDate: now,
-        dueDate: data.dueDate,
-        notes: data.notes,
-        createdAt: now,
-        updatedAt: now,
-      };
-
-      await mongoDb.createInvoice(invoice);
-      return res.status(201).json(invoice);
-    }
-
-    // PATCH - Update invoice
-    if (req.method === "PATCH") {
-      const { invoiceId, action } = req.query;
-
-      if (!invoiceId || !action) {
-        return res.status(400).json({ error: "Missing invoiceId or action" });
-      }
-
+    const { invoiceId, invoiceNumber, creatorUserId, clientEmail } = req.query;
+    if (invoiceId) {
       const invoice = await mongoDb.getInvoiceById(invoiceId as string);
       if (!invoice) {
         return res.status(404).json({ error: "Invoice not found" });
       }
-
-      const now = new Date().toISOString();
-
-      // Send action
-      if (action === "send") {
-        if (invoice.status !== "draft") {
-          return res.status(400).json({ error: "Only draft invoices can be sent" });
-        }
-
-        const updated = await mongoDb.updateInvoice(invoiceId as string, {
-          status: "sent" as InvoiceStatus,
-          updatedAt: now,
-        });
-        return res.status(200).json(updated);
-      }
-
-      // Pay action
-      if (action === "pay") {
-        const validation = PayInvoiceSchema.safeParse(req.body);
-        if (!validation.success) {
-          return res.status(400).json({ error: validation.error.errors });
-        }
-
-        if (invoice.status !== "sent" && invoice.status !== "overdue") {
-          return res.status(400).json({ error: "Invoice cannot be paid in current status" });
-        }
-
-        const data = validation.data;
-        const updated = await mongoDb.updateInvoice(invoiceId as string, {
-          status: "paid" as InvoiceStatus,
-          transactionHash: data.transactionHash,
-          paidAt: now,
-          updatedAt: now,
-        });
-        return res.status(200).json(updated);
-      }
-
-      // Cancel action
-      if (action === "cancel") {
-        if (invoice.status === "paid") {
-          return res.status(400).json({ error: "Paid invoices cannot be cancelled" });
-        }
-
-        const updated = await mongoDb.updateInvoice(invoiceId as string, {
-          status: "cancelled" as InvoiceStatus,
-          updatedAt: now,
-        });
-        return res.status(200).json(updated);
-      }
-
-      return res.status(400).json({ error: "Invalid action" });
+      return res.status(200).json(invoice);
     }
-
-    return res.status(405).json({ error: "Method not allowed" });
-  } catch (error) {
-    console.error("Invoices API error:", error);
+    if (invoiceNumber) {
+      const invoice = await mongoDb.getInvoiceByNumber(invoiceNumber as string);
+      if (!invoice) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+      return res.status(200).json(invoice);
+    }
+    if (creatorUserId) {
+      const invoices = await mongoDb.getInvoicesByCreator(creatorUserId as string);
+      return res.status(200).json(invoices);
+    }
+    if (clientEmail) {
+      const invoices = await mongoDb.getInvoicesByClient(clientEmail as string);
+      return res.status(200).json(invoices);
+    }
+    return res.status(400).json({ error: "Missing query parameters" });
+  } catch (err) {
     return res.status(500).json({ error: "Internal server error" });
   }
-}
+});
+
+router.post('/', async (req: Request, res: Response) => {
+  try {
+    const validation = CreateInvoiceSchema.safeParse(req.body);
+    if (!validation.success) {
+      return res.status(400).json({ error: validation.error.errors });
+    }
+    const data = validation.data;
+    const invoiceId = `inv_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    const now = new Date().toISOString();
+    const date = new Date();
+    const dateStr = date.toISOString().split("T")[0].replace(/-/g, "");
+    const random = Math.floor(Math.random() * 1000).toString().padStart(3, "0");
+    const invoiceNumber = `INV-${dateStr}-${random}`;
+    const invoice: Invoice = {
+      invoiceId,
+      invoiceNumber,
+      creatorUserId: data.creatorUserId,
+      creatorEmail: data.creatorEmail.toLowerCase().trim(),
+      creatorName: data.creatorName,
+      creatorAddress: data.creatorAddress,
+      clientEmail: data.clientEmail.toLowerCase().trim(),
+      clientName: data.clientName,
+      clientAddress: data.clientAddress,
+      items: data.items as InvoiceItem[],
+      subtotal: data.subtotal,
+      tax: data.tax,
+      taxRate: data.taxRate,
+      total: data.total,
+      token: data.token,
+      chain: data.chain,
+      status: "draft",
+      issueDate: now,
+      dueDate: data.dueDate,
+      notes: data.notes,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await mongoDb.createInvoice(invoice);
+    return res.status(201).json(invoice);
+  } catch (err) {
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.patch('/', async (req: Request, res: Response) => {
+  try {
+    const { invoiceId, action } = req.query;
+    if (!invoiceId || !action) {
+      return res.status(400).json({ error: "Missing invoiceId or action" });
+    }
+    const invoice = await mongoDb.getInvoiceById(invoiceId as string);
+    if (!invoice) {
+      return res.status(404).json({ error: "Invoice not found" });
+    }
+    const now = new Date().toISOString();
+    if (action === "send") {
+      if (invoice.status !== "draft") {
+        return res.status(400).json({ error: "Only draft invoices can be sent" });
+      }
+      const updated = await mongoDb.updateInvoice(invoiceId as string, { status: "sent" as InvoiceStatus, updatedAt: now });
+      return res.status(200).json(updated);
+    }
+    if (action === "pay") {
+      const validation = PayInvoiceSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ error: validation.error.errors });
+      }
+      if (invoice.status !== "sent" && invoice.status !== "overdue") {
+        return res.status(400).json({ error: "Invoice cannot be paid in current status" });
+      }
+      const data = validation.data;
+      const updated = await mongoDb.updateInvoice(invoiceId as string, { status: "paid" as InvoiceStatus, transactionHash: data.transactionHash, paidAt: now, updatedAt: now });
+      return res.status(200).json(updated);
+    }
+    if (action === "cancel") {
+      if (invoice.status === "paid") {
+        return res.status(400).json({ error: "Paid invoices cannot be cancelled" });
+      }
+      const updated = await mongoDb.updateInvoice(invoiceId as string, { status: "cancelled" as InvoiceStatus, updatedAt: now });
+      return res.status(200).json(updated);
+    }
+    return res.status(400).json({ error: "Invalid action" });
+  } catch (err) {
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+export default router;

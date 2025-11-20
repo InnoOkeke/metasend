@@ -2,6 +2,12 @@ import "dotenv/config";
 
 export default ({ config }) => ({
   ...config,
+  android: {
+    package: "com.kellonapp.metasend",
+  },
+  ios: {
+  bundleIdentifier: "com.kellonapp.metasend"
+},
   extra: {
     ...config.extra,
     // Coinbase Configuration
@@ -35,8 +41,8 @@ export default ({ config }) => ({
     awsSesSecretKey: process.env.AWS_SES_SECRET_KEY || "",
     
     // App Configuration
-    appUrl: process.env.APP_URL || "https://metasend.vercel.app",
-    supportEmail: process.env.SUPPORT_EMAIL || "support@metasend.io",
+    appUrl: process.env.APP_URL || "",
+    supportEmail: process.env.SUPPORT_EMAIL || "",
     
     // Escrow Configuration
     escrowMockMode: (process.env.ESCROW_USE_MOCK || "true") !== "false",
@@ -56,4 +62,9 @@ export default ({ config }) => ({
       projectId: process.env.EAS_PROJECT_ID || "",
     },
   },
+  plugins: [
+    "expo-localization",
+    "expo-secure-store"
+    // ...existing plugins
+  ],
 });

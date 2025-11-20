@@ -46,7 +46,8 @@ app.all('/api/send-email', adaptVercelHandler(sendEmailHandler));
 app.all('/api/tips', adaptVercelHandler(tipsHandler));
 app.all('/api/transfers', adaptVercelHandler(transfersHandler));
 app.all('/api/users', adaptVercelHandler(usersHandler));
-app.all('/api/web', adaptVercelHandler(webHandler));
+import webRouter from './api/web';
+app.use('/api/web', webRouter);
 app.all('/api/cron/process-expiry', adaptVercelHandler(processExpiryHandler));
 app.all('/api/cron/send-reminders', adaptVercelHandler(sendRemindersHandler));
 

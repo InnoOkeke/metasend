@@ -1,18 +1,19 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { Request, Response, Router } from 'express';
 import { getDatabase } from '../src/services/database';
 import { User } from '../src/types/database';
 
-const authorize = (req: VercelRequest): boolean => {
+const router = Router();
+const authorize = (req: Request): boolean => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return false;
   return authHeader === `Bearer ${process.env.METASEND_API_KEY}`;
 };
 
-const badRequest = (res: VercelResponse, message: string) => res.status(400).json({ success: false, error: message });
+const badRequest = (res: Response, message: string) => res.status(400).json({ success: false, error: message });
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+router.get('/', async (req: Request, res: Response) => {
   // Health check endpoint (no auth required)
-  if (req.method === 'GET' && req.url?.includes('health')) {
+  if (req.url?.includes('health')) {
     return res.status(200).json({ 
       success: true, 
       status: 'healthy',
@@ -20,65 +21,62 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       mongoConfigured: Boolean(process.env.MONGODB_URI)
     });
   }
-
   if (!authorize(req)) {
     return res.status(401).json({ success: false, error: 'Unauthorized' });
   }
-
   try {
-    console.log('📍 Users API called:', req.method, req.url);
-    
+    // ...existing code for GET...
     // Check if MongoDB is configured
     if (!process.env.MONGODB_URI) {
-      console.error('❌ MONGODB_URI not configured');
-      return res.status(500).json({ 
-        success: false, 
-        error: 'Database not configured' 
-      });
+      return res.status(500).json({ success: false, error: 'Database not configured' });
     }
-
-    console.log('🔄 Connecting to database...');
-    
-    // Add timeout wrapper for database connection
     const dbPromise = getDatabase();
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Database connection timeout')), 8000)
-    );
-    
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Database connection timeout')), 8000));
     const db = await Promise.race([dbPromise, timeoutPromise]) as Awaited<ReturnType<typeof getDatabase>>;
-    console.log('✅ Database connected');
-
-    if (req.method === 'GET') {
-      const { email, userId, search, limit } = req.query;
-
-      if (search && typeof search === 'string') {
-        const users = await db.searchUsersByEmail(search, limit ? Number(limit) : 10);
-        return res.status(200).json({ success: true, users });
-      }
-
-      if (email && typeof email === 'string') {
-        // Normalize email to lowercase for consistent lookups
-        const normalizedEmail = email.toLowerCase().trim();
-        const user = await db.getUserByEmail(normalizedEmail);
-        return res.status(200).json({ success: true, user });
-      }
-
-      if (userId && typeof userId === 'string') {
-        const user = await db.getUserById(userId);
-        return res.status(200).json({ success: true, user });
-      }
-
-      return badRequest(res, 'Provide email, userId, or search query');
+    const { email, userId, search, limit } = req.query;
+    if (search && typeof search === 'string') {
+      const users = await db.searchUsersByEmail(search, limit ? Number(limit) : 10);
+      return res.status(200).json({ success: true, users });
     }
+    if (email && typeof email === 'string') {
+      const normalizedEmail = email.toLowerCase().trim();
+      const user = await db.getUserByEmail(normalizedEmail);
+      return res.status(200).json({ success: true, user });
+    }
+    if (userId && typeof userId === 'string') {
+      const user = await db.getUserById(userId);
+      return res.status(200).json({ success: true, user });
+    }
+    return badRequest(res, 'Provide email, userId, or search query');
+  } catch (err) {
+    return res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
 
-    if (req.method === 'POST') {
-      const { userId, email, emailVerified, walletAddress, displayName, avatar } = req.body as Partial<User> & {
-        walletAddress?: string;
-        displayName?: string;
-        avatar?: string;
-      };
+router.post('/', async (req: Request, res: Response) => {
+  if (!authorize(req)) {
+    return res.status(401).json({ success: false, error: 'Unauthorized' });
+  }
+  try {
+    // ...existing code for POST...
+    // Check if MongoDB is configured
+    if (!process.env.MONGODB_URI) {
+      return res.status(500).json({ success: false, error: 'Database not configured' });
+    }
+    const dbPromise = getDatabase();
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Database connection timeout')), 8000));
+    const db = await Promise.race([dbPromise, timeoutPromise]) as Awaited<ReturnType<typeof getDatabase>>;
+    const { userId, email, emailVerified, walletAddress, displayName, avatar } = req.body as Partial<User> & { walletAddress?: string; displayName?: string; avatar?: string; };
+    if (!userId || !email) {
+      return badRequest(res, 'Missing userId or email');
+    }
+    // ...rest of POST logic...
+  } catch (err) {
+    return res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
 
-      if (!userId || !email) {
+export default router;
         return badRequest(res, 'userId and email are required');
       }
 

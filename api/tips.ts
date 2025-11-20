@@ -3,7 +3,7 @@
  * Handles creating tip jars, sending tips, and retrieving tip data
  */
 
-import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { Request, Response, Router } from "express";
 import { z } from "zod";
 import mongoDb from "../src/services/mongoDatabase";
 import { TipJar, Tip, TipJarStatus } from "../src/types/database";
@@ -37,48 +37,48 @@ const SendTipSchema = z.object({
   transactionHash: z.string(),
 });
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+const router = Router();
+router.get('/', async (req: Request, res: Response) => {
   try {
-    // GET - Retrieve tip jars or tips
-    if (req.method === "GET") {
-      const { jarId, creatorUserId, tipperUserId, type } = req.query;
-
-      // Get specific jar
-      if (jarId && type !== "tips") {
-        const jar = await mongoDb.getTipJarById(jarId as string);
-        if (!jar) {
-          return res.status(404).json({ error: "Tip jar not found" });
-        }
-        return res.status(200).json(jar);
+    const { jarId, creatorUserId, tipperUserId, type } = req.query;
+    if (jarId && type !== "tips") {
+      const jar = await mongoDb.getTipJarById(jarId as string);
+      if (!jar) {
+        return res.status(404).json({ error: "Tip jar not found" });
       }
-
-      // Get tips for a jar
-      if (jarId && type === "tips") {
-        const tips = await mongoDb.getTipsByJar(jarId as string);
-        return res.status(200).json(tips);
-      }
-
-      // Get jars by creator
-      if (creatorUserId) {
-        const jars = await mongoDb.getTipJarsByCreator(creatorUserId as string);
-        return res.status(200).json(jars);
-      }
-
-      // Get tips by tipper
-      if (tipperUserId) {
-        const tips = await mongoDb.getTipsByTipper(tipperUserId as string);
-        return res.status(200).json(tips);
-      }
-
-      return res.status(400).json({ error: "Missing query parameters" });
+      return res.status(200).json(jar);
     }
+    if (jarId && type === "tips") {
+      const tips = await mongoDb.getTipsByJar(jarId as string);
+      return res.status(200).json(tips);
+    }
+    if (creatorUserId) {
+      const jars = await mongoDb.getTipJarsByCreator(creatorUserId as string);
+      return res.status(200).json(jars);
+    }
+    if (tipperUserId) {
+      const tips = await mongoDb.getTipsByTipper(tipperUserId as string);
+      return res.status(200).json(tips);
+    }
+    return res.status(400).json({ error: "Missing query parameters" });
+  } catch (err) {
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
 
-    // POST - Create tip jar or send tip
-    if (req.method === "POST") {
-      const { action } = req.query;
+router.post('/', async (req: Request, res: Response) => {
+  try {
+    const { action } = req.query;
+    if (action === "create-jar") {
+      // ...existing code for create-jar...
+    }
+    // ...existing code for send tip...
+  } catch (err) {
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
 
-      // Create tip jar
-      if (action === "create-jar") {
+export default router;
         const validation = CreateTipJarSchema.safeParse(req.body);
         if (!validation.success) {
           return res.status(400).json({ error: validation.error.errors });

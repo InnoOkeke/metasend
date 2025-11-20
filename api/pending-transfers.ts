@@ -1,84 +1,86 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { Request, Response, Router } from "express";
 import { pendingTransferService, CreatePendingTransferSchema } from "../src/services/PendingTransferService";
 
-const authorize = (req: VercelRequest): boolean => {
+const router = Router();
+const authorize = (req: Request): boolean => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return false;
   return authHeader === `Bearer ${process.env.METASEND_API_KEY}`;
 };
 
-const badRequest = (res: VercelResponse, message: string) =>
+const badRequest = (res: Response, message: string) =>
   res.status(400).json({ success: false, error: message });
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+router.get('/', async (req: Request, res: Response) => {
   if (!authorize(req)) {
     return res.status(401).json({ success: false, error: "Unauthorized" });
   }
-
   try {
-    if (req.method === "GET") {
-      const { recipientEmail, senderUserId, transferId } = req.query;
-
-      if (recipientEmail && typeof recipientEmail === "string") {
-        const transfers = await pendingTransferService.getPendingTransfers(recipientEmail);
-        return res.status(200).json({ success: true, transfers });
-      }
-
-      if (senderUserId && typeof senderUserId === "string") {
-        const transfers = await pendingTransferService.getSentPendingTransfers(senderUserId);
-        return res.status(200).json({ success: true, transfers });
-      }
-
-      if (transferId && typeof transferId === "string") {
-        const transfer = await pendingTransferService.getTransferDetails(transferId);
-        return res.status(200).json({ success: true, transfer });
-      }
-
-      return badRequest(res, "Provide recipientEmail, senderUserId, or transferId");
+    const { recipientEmail, senderUserId, transferId } = req.query;
+    if (recipientEmail && typeof recipientEmail === "string") {
+      const transfers = await pendingTransferService.getPendingTransfers(recipientEmail);
+      return res.status(200).json({ success: true, transfers });
     }
+    if (senderUserId && typeof senderUserId === "string") {
+      const transfers = await pendingTransferService.getSentPendingTransfers(senderUserId);
+      return res.status(200).json({ success: true, transfers });
+    }
+    if (transferId && typeof transferId === "string") {
+      const transfer = await pendingTransferService.getTransferDetails(transferId);
+      return res.status(200).json({ success: true, transfer });
+    }
+    return badRequest(res, "Provide recipientEmail, senderUserId, or transferId");
+  } catch (err) {
+    return res.status(500).json({ success: false, error: "Internal server error" });
+  }
+});
 
-    if (req.method === "POST") {
-      console.log("⏱️ POST /api/pending-transfers - Start");
-      const startTime = Date.now();
-      
-      const parsed = CreatePendingTransferSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return badRequest(res, parsed.error.message);
-      }
-      console.log(`⏱️ Schema validation: ${Date.now() - startTime}ms`);
-
-      // Start processing asynchronously but don't wait for completion
-      const transferPromise = pendingTransferService.createPendingTransfer(parsed.data);
-      
-      // Return immediately with pending status
-      res.status(202).json({ 
-        success: true, 
-        status: "processing",
-        message: "Transfer is being processed" 
+router.post('/', async (req: Request, res: Response) => {
+  if (!authorize(req)) {
+    return res.status(401).json({ success: false, error: "Unauthorized" });
+  }
+  try {
+    const parsed = CreatePendingTransferSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return badRequest(res, parsed.error.message);
+    }
+    // Start processing asynchronously but don't wait for completion
+    const transferPromise = pendingTransferService.createPendingTransfer(parsed.data);
+    // Return immediately with pending status
+    res.status(202).json({ success: true, status: "processing", message: "Transfer is being processed" });
+    // Continue processing in background (fire-and-forget)
+    transferPromise
+      .then(transfer => {
+        // ...existing code...
+      })
+      .catch(error => {
+        // ...existing code...
       });
-      
-      // Continue processing in background (fire-and-forget)
-      transferPromise
-        .then(transfer => {
-          console.log(`✅ Transfer processed: ${transfer.transferId}`);
-          console.log(`⏱️ Total time: ${Date.now() - startTime}ms`);
-        })
-        .catch(error => {
-          console.error(`❌ Transfer processing failed:`, error);
-        });
-      
-      return;
+    return;
+  } catch (err) {
+    return res.status(500).json({ success: false, error: "Internal server error" });
+  }
+});
+
+router.patch('/', async (req: Request, res: Response) => {
+  if (!authorize(req)) {
+    return res.status(401).json({ success: false, error: "Unauthorized" });
+  }
+  try {
+    const { action } = req.body as { action?: string };
+    if (!action) {
+      return badRequest(res, "Action is required");
     }
+    if (action === "claim") {
+      // ...existing code for claim...
+    }
+    // ...other PATCH actions...
+  } catch (err) {
+    return res.status(500).json({ success: false, error: "Internal server error" });
+  }
+});
 
-    if (req.method === "PATCH") {
-      const { action } = req.body as { action?: string };
-      if (!action) {
-        return badRequest(res, "Action is required");
-      }
-
-      if (action === "claim") {
-        const { transferId, claimantUserId } = req.body as {
-          transferId?: string;
+export default router;
           claimantUserId?: string;
         };
 

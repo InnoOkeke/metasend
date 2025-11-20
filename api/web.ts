@@ -3,7 +3,7 @@
  * Handles claim, payment, tips, invoices, and gifts
  */
 
-import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { Request, Response, Router } from "express";
 import mongoDb from "../src/services/mongoDatabase";
 
 const GIFT_THEMES: Record<string, { emoji: string; background: string; primary: string; accent: string }> = {
@@ -16,34 +16,36 @@ const GIFT_THEMES: Record<string, { emoji: string; background: string; primary: 
   custom: { emoji: "🎁", background: "#F3E8FF", primary: "#A855F7", accent: "#7C3AED" },
 };
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  const path = req.url || "";
-  
-  // Parse route
-  if (path.startsWith("/claim/")) {
-    const transferId = path.replace("/claim/", "").split("?")[0];
-    return handleClaim(transferId, res);
-  }
-  
-  if (path.startsWith("/pay/")) {
-    const requestId = path.replace("/pay/", "").split("?")[0];
-    return handlePayment(requestId, res);
-  }
-  
-  if (path.startsWith("/gift/")) {
-    const giftId = path.replace("/gift/", "").split("?")[0];
-    return handleGift(giftId, res);
-  }
 
-  if (path.startsWith("/tip/")) {
-    const jarId = path.replace("/tip/", "").split("?")[0];
-    return handleTip(jarId, res);
-  }
-  
-  return res.status(404).send(getErrorPage("Page not found"));
-}
+const router = Router();
 
-async function handleClaim(transferId: string, res: VercelResponse) {
+router.get("/claim/:transferId", async (req: Request, res: Response) => {
+  const transferId = req.params.transferId;
+  await handleClaim(transferId, res);
+});
+
+router.get("/pay/:requestId", async (req: Request, res: Response) => {
+  const requestId = req.params.requestId;
+  await handlePayment(requestId, res);
+});
+
+router.get("/gift/:giftId", async (req: Request, res: Response) => {
+  const giftId = req.params.giftId;
+  await handleGift(giftId, res);
+});
+
+router.get("/tip/:jarId", async (req: Request, res: Response) => {
+  const jarId = req.params.jarId;
+  await handleTip(jarId, res);
+});
+
+router.use((req, res) => {
+  res.status(404).send(getErrorPage("Page not found"));
+});
+
+export default router;
+
+async function handleClaim(transferId: string, res: Response) {
   if (!transferId) {
     return res.status(400).send(getErrorPage("Invalid claim link"));
   }
@@ -71,7 +73,7 @@ async function handleClaim(transferId: string, res: VercelResponse) {
   }
 }
 
-async function handlePayment(requestId: string, res: VercelResponse) {
+async function handlePayment(requestId: string, res: Response) {
   if (!requestId) {
     return res.status(400).send(getErrorPage("Invalid payment request link"));
   }
@@ -99,7 +101,7 @@ async function handlePayment(requestId: string, res: VercelResponse) {
   }
 }
 
-async function handleGift(giftId: string, res: VercelResponse) {
+async function handleGift(giftId: string, res: Response) {
   if (!giftId) {
     return res.status(400).send(getErrorPage("Invalid gift link"));
   }
@@ -132,7 +134,7 @@ async function handleGift(giftId: string, res: VercelResponse) {
   }
 }
 
-async function handleTip(jarId: string, res: VercelResponse) {
+async function handleTip(jarId: string, res: Response) {
   if (!jarId) {
     return res.status(400).send(getErrorPage("Invalid tip jar link"));
   }

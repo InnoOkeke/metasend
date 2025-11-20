@@ -12,27 +12,27 @@
     },
     {
       "source": "/claim/:transferId",
-      "destination": "/api/web"
+      "destination": "/api/web/claim/:transferId"
     },
     {
       "source": "/pay/:requestId",
-      "destination": "/api/web"
+      "destination": "/api/web/pay/:requestId"
     },
     {
       "source": "/gift/:giftId",
-      "destination": "/api/web"
+      "destination": "/api/web/gift/:giftId"
     },
     {
       "source": "/gifts/:giftId",
-      "destination": "/api/web"
+      "destination": "/api/web/gift/:giftId"
     },
     {
       "source": "/tip/:jarId",
-      "destination": "/api/web"
+      "destination": "/api/web/tip/:jarId"
     },
     {
       "source": "/tipjar/:jarId",
-      "destination": "/api/web"
+      "destination": "/api/web/tip/:jarId"
     }
   ],
   "headers": [

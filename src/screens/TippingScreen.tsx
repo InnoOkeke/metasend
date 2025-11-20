@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Pressable, Alert, Share, Clipboard, KeyboardAvoidingView, Platform } from "react-native";
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useMutation } from "@tanstack/react-query";
 import { RootStackParamList } from "../navigation/RootNavigator";
@@ -136,9 +137,10 @@ export const TippingScreen: React.FC<Props> = () => {
         animationType="slide"
         transparent={true}
         onRequestClose={() => setShowCreateModal(false)}
+        statusBarTranslucent
       >
         <KeyboardAvoidingView 
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={styles.modalOverlay}
         >
           <View style={styles.modalContent}>
@@ -149,7 +151,7 @@ export const TippingScreen: React.FC<Props> = () => {
               </Pressable>
             </View>
 
-            <ScrollView style={styles.modalBody}>
+            <KeyboardAwareScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled" enableAutomaticScroll extraScrollHeight={Platform.OS === 'ios' ? 20 : 80}>
               <TextField
                 label="Title *"
                 value={form.title}
@@ -197,7 +199,7 @@ export const TippingScreen: React.FC<Props> = () => {
                 loading={createJarMutation.isPending}
                 disabled={createJarMutation.isPending}
               />
-            </ScrollView>
+            </KeyboardAwareScrollView>
           </View>
         </KeyboardAvoidingView>
       </Modal>

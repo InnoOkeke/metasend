@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Pressable, Alert, Share, Clipboard, KeyboardAvoidingView, Platform } from "react-native";
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useMutation } from "@tanstack/react-query";
 import { RootStackParamList } from "../navigation/RootNavigator";
@@ -150,7 +151,7 @@ export const GiftsScreen: React.FC<Props> = () => {
         onRequestClose={() => setShowCreateModal(false)}
       >
         <KeyboardAvoidingView 
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={styles.modalOverlay}
         >
           <View style={styles.modalContent}>
@@ -161,7 +162,7 @@ export const GiftsScreen: React.FC<Props> = () => {
               </Pressable>
             </View>
 
-            <ScrollView style={styles.modalBody}>
+            <KeyboardAwareScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled" enableAutomaticScroll extraScrollHeight={Platform.OS === 'ios' ? 20 : 80}>
               <Text style={styles.sectionLabel}>Choose Theme</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.themeSelector}>
                 {themes.map((theme) => (
@@ -219,7 +220,7 @@ export const GiftsScreen: React.FC<Props> = () => {
                 loading={createGiftMutation.isPending}
                 disabled={createGiftMutation.isPending}
               />
-            </ScrollView>
+            </KeyboardAwareScrollView>
           </View>
         </KeyboardAvoidingView>
       </Modal>

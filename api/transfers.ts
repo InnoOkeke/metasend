@@ -70,31 +70,17 @@ router.get('/', async (req: Request, res: Response) => {
 });
 
 router.post('/', async (req: Request, res: Response) => {
-  if (!authorize(req)) {
-    return res.status(401).json({ success: false, error: "Unauthorized" });
-  }
+  if (!authorize(req)) return res.status(401).json({ success: false, error: 'Unauthorized' });
   try {
     const db = mongoDatabase;
     const parsed = TransferRecordSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return badRequest(res, parsed.error.message);
-    }
+    if (!parsed.success) return badRequest(res, parsed.error.message);
     await db.saveTransferRecord(parsed.data as TransferRecord);
     return res.status(201).json({ success: true, transfer: parsed.data });
   } catch (err) {
-    return res.status(500).json({ success: false, error: "Internal server error" });
+    console.error('Transfers POST error:', err);
+    return res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 
 export default router;
-
-    res.setHeader("Allow", ["GET", "POST"]);
-    return res.status(405).json({ success: false, error: "Method not allowed" });
-  } catch (error) {
-    console.error("❌ Transfers API error:", error);
-    return res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
-    });
-  }
-}

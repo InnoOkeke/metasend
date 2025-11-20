@@ -15,6 +15,7 @@ router.post('/', async (req: Request, res: Response) => {
     if (!to || !subject || !html) {
       return res.status(400).json({ error: 'Missing required fields: to, subject, html' });
     }
+
     const allowedDomains = (process.env.RESEND_ALLOWED_FROM_DOMAINS || 'kellon.xyz,resend.dev')
       .split(',')
       .map((domain: string) => domain.trim().toLowerCase())
@@ -41,28 +42,23 @@ router.post('/', async (req: Request, res: Response) => {
     if (!isAllowed(fromAddress)) {
       console.warn('⚠️ Falling back to verified sender domain for Resend.');
     }
-    const { data, error } = await resend.emails.send({
+
+    const response = await resend.emails.send({
       from: fromAddress,
       to,
       subject,
       html,
     });
-    if (error) {
-      return res.status(500).json({ success: false, error: 'Failed to send email', details: error.message });
-    }
-    return res.status(200).json({ success: true, messageId: data?.id, message: 'Email sent successfully' });
+
+    return res.status(200).json({ success: true, messageId: (response as any)?.id, message: 'Email sent successfully' });
   } catch (error) {
-    return res.status(500).json({ error: 'Internal server error' });
+    console.error('❌ Email send error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to send email',
+      details: error instanceof Error ? error.message : 'Unknown error',
+    });
   }
 });
 
 export default router;
-    console.error('❌ Email send error:', error);
-    
-    return res.status(500).json({ 
-      success: false,
-      error: 'Failed to send email',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-}

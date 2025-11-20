@@ -32,20 +32,20 @@ import sendEmailHandler from './api/send-email';
 import tipsHandler from './api/tips';
 import transfersHandler from './api/transfers';
 import usersHandler from './api/users';
-import webHandler from './api/web';
 import processExpiryHandler from './api/cron/process-expiry';
 import sendRemindersHandler from './api/cron/send-reminders';
 
 // Mount API routes (adapted from Vercel to Express)
-app.all('/api/pending-transfers', adaptVercelHandler(pendingTransfersHandler));
+// Mount express Routers directly
+app.use('/api/pending-transfers', pendingTransfersHandler);
 app.all('/api/gifts', adaptVercelHandler(giftsHandler));
 app.all('/api/health', adaptVercelHandler(healthHandler));
-app.all('/api/invoices', adaptVercelHandler(invoicesHandler));
-app.all('/api/payment-requests', adaptVercelHandler(paymentRequestsHandler));
-app.all('/api/send-email', adaptVercelHandler(sendEmailHandler));
-app.all('/api/tips', adaptVercelHandler(tipsHandler));
-app.all('/api/transfers', adaptVercelHandler(transfersHandler));
-app.all('/api/users', adaptVercelHandler(usersHandler));
+app.use('/api/invoices', invoicesHandler);
+app.use('/api/payment-requests', paymentRequestsHandler);
+app.use('/api/send-email', sendEmailHandler);
+app.use('/api/tips', tipsHandler);
+app.use('/api/transfers', transfersHandler);
+app.use('/api/users', usersHandler);
 import webRouter from './api/web';
 app.use('/api/web', webRouter);
 app.all('/api/cron/process-expiry', adaptVercelHandler(processExpiryHandler));

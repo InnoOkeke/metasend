@@ -54,91 +54,78 @@ router.get('/', async (req: Request, res: Response) => {
 });
 
 router.post('/', async (req: Request, res: Response) => {
-  if (!authorize(req)) {
-    return res.status(401).json({ success: false, error: 'Unauthorized' });
-  }
+  if (!authorize(req)) return res.status(401).json({ success: false, error: 'Unauthorized' });
   try {
-    // ...existing code for POST...
-    // Check if MongoDB is configured
-    if (!process.env.MONGODB_URI) {
-      return res.status(500).json({ success: false, error: 'Database not configured' });
-    }
+    if (!process.env.MONGODB_URI) return res.status(500).json({ success: false, error: 'Database not configured' });
     const dbPromise = getDatabase();
     const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Database connection timeout')), 8000));
-    const db = await Promise.race([dbPromise, timeoutPromise]) as Awaited<ReturnType<typeof getDatabase>>;
-    const { userId, email, emailVerified, walletAddress, displayName, avatar } = req.body as Partial<User> & { walletAddress?: string; displayName?: string; avatar?: string; };
-    if (!userId || !email) {
-      return badRequest(res, 'Missing userId or email');
+    const db = (await Promise.race([dbPromise, timeoutPromise])) as Awaited<ReturnType<typeof getDatabase>>;
+
+    const { userId, email, emailVerified, walletAddress, displayName, avatar } = req.body as Partial<User> & { walletAddress?: string; displayName?: string; avatar?: string };
+    if (!userId || !email) return badRequest(res, 'userId and email are required');
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const existing = await db.getUserByEmail(normalizedEmail);
+    const now = new Date().toISOString();
+
+    if (existing) {
+      const updated = await db.updateUser(existing.userId, {
+        emailVerified: emailVerified ?? existing.emailVerified,
+        wallets: {
+          ...existing.wallets,
+          evm: walletAddress ?? existing.wallets?.evm,
+        },
+        profile: {
+          ...existing.profile,
+          displayName: displayName ?? existing.profile?.displayName,
+          avatar: avatar ?? existing.profile?.avatar,
+        },
+        lastLoginAt: now,
+      });
+
+      return res.status(200).json({ success: true, user: updated });
     }
-    // ...rest of POST logic...
+
+    const user: User = {
+      userId,
+      email: normalizedEmail,
+      emailVerified: emailVerified ?? true,
+      wallets: {
+        evm: walletAddress,
+      },
+      profile: {
+        displayName,
+        avatar,
+      },
+      createdAt: now,
+      lastLoginAt: now,
+    };
+
+    await db.createUser(user);
+    return res.status(201).json({ success: true, user });
   } catch (err) {
+    console.error('Users POST error:', err);
+    return res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+router.patch('/', async (req: Request, res: Response) => {
+  if (!authorize(req)) return res.status(401).json({ success: false, error: 'Unauthorized' });
+  try {
+    if (!process.env.MONGODB_URI) return res.status(500).json({ success: false, error: 'Database not configured' });
+    const dbPromise = getDatabase();
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Database connection timeout')), 8000));
+    const db = (await Promise.race([dbPromise, timeoutPromise])) as Awaited<ReturnType<typeof getDatabase>>;
+
+    const { userId, updates } = req.body as { userId?: string; updates?: Partial<User> };
+    if (!userId || !updates) return badRequest(res, 'userId and updates are required');
+
+    const updated = await db.updateUser(userId, updates);
+    return res.status(200).json({ success: true, user: updated });
+  } catch (err) {
+    console.error('Users PATCH error:', err);
     return res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 
 export default router;
-        return badRequest(res, 'userId and email are required');
-      }
-
-      // Normalize email to lowercase before storing
-      const normalizedEmail = email.toLowerCase().trim();
-      const existing = await db.getUserByEmail(normalizedEmail);
-      const now = new Date().toISOString();
-
-      if (existing) {
-        const updated = await db.updateUser(existing.userId, {
-          emailVerified: emailVerified ?? existing.emailVerified,
-          wallets: {
-            ...existing.wallets,
-            evm: walletAddress ?? existing.wallets.evm,
-          },
-          profile: {
-            ...existing.profile,
-            displayName: displayName ?? existing.profile.displayName,
-            avatar: avatar ?? existing.profile.avatar,
-          },
-          lastLoginAt: now,
-        });
-
-        return res.status(200).json({ success: true, user: updated });
-      }
-
-      const user: User = {
-        userId,
-        email: normalizedEmail,
-        emailVerified: emailVerified ?? true,
-        wallets: {
-          evm: walletAddress,
-        },
-        profile: {
-          displayName,
-          avatar,
-        },
-        createdAt: now,
-        lastLoginAt: now,
-      };
-
-      await db.createUser(user);
-      return res.status(201).json({ success: true, user });
-    }
-
-    if (req.method === 'PATCH') {
-      const { userId, updates } = req.body as { userId?: string; updates?: Partial<User> };
-      if (!userId || !updates) {
-        return badRequest(res, 'userId and updates are required');
-      }
-
-      const updated = await db.updateUser(userId, updates);
-      return res.status(200).json({ success: true, user: updated });
-    }
-
-    res.setHeader('Allow', ['GET', 'POST', 'PATCH']);
-    return res.status(405).json({ success: false, error: 'Method not allowed' });
-  } catch (error) {
-    console.error('❌ User API error:', error);
-    return res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
-    });
-  }
-}

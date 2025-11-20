@@ -4,12 +4,16 @@
     {
       "src": "api/**/*.ts",
       "use": "@vercel/node"
+    },
+    {
+      "src": "server.ts",
+      "use": "@vercel/node"
     }
   ],
   "routes": [
     {
       "src": "/",
-      "dest": "/api/index"
+      "dest": "/api/index.ts"
     },
     {
       "src": "/.well-known/apple-app-site-association",
@@ -21,27 +25,31 @@
     },
     {
       "src": "/claim/(.*)",
-      "dest": "/api/web?transferId=$1&type=claim"
+      "dest": "/api/web.ts"
     },
     {
       "src": "/pay/(.*)",
-      "dest": "/api/web?requestId=$1&type=pay"
+      "dest": "/api/web.ts"
     },
     {
       "src": "/gift/(.*)",
-      "dest": "/api/web?giftId=$1&type=gift"
+      "dest": "/api/web.ts"
     },
     {
       "src": "/gifts/(.*)",
-      "dest": "/api/web?giftId=$1&type=gift"
+      "dest": "/api/web.ts"
     },
     {
       "src": "/tip/(.*)",
-      "dest": "/api/web?jarId=$1&type=tip"
+      "dest": "/api/web.ts"
     },
     {
       "src": "/tipjar/(.*)",
-      "dest": "/api/web?jarId=$1&type=tip"
+      "dest": "/api/web.ts"
+    },
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/$1.ts"
     }
   ]
 }

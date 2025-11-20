@@ -1,6 +1,4 @@
 {
-  "buildCommand": "echo 'No build needed - API only'",
-  "outputDirectory": "api",
   "rewrites": [
     {
       "source": "/",

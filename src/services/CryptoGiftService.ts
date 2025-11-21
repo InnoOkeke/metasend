@@ -44,6 +44,10 @@ export type GiftSummary = {
   createdAt: string;
   claimedAt?: string;
   expiresAt?: string;
+  escrowTransferId?: string;
+  recipientHash?: string;
+  escrowStatus?: "pending" | "claimed" | "refunded" | "expired";
+  escrowTxHash?: string;
 };
 
 export type GiftThemeConfig = {

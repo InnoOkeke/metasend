@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Pressable, Alert, Share, Clipboard, Platform, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Pressable, Alert, Share, Clipboard, Platform, ActivityIndicator, Linking } from "react-native";
 import * as LocalAuthentication from "expo-local-authentication";
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -15,6 +15,8 @@ import { sendUsdcWithPaymaster, TransferIntent } from "../services/transfers";
 import { GiftTheme } from "../types/database";
 import type { ColorPalette } from "../utils/theme";
 import { spacing, typography } from "../utils/theme";
+import Constants from "expo-constants";
+import { TransactionCard } from "../components/TransactionCard";
 import { getUsdcBalance } from "../services/blockchain";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Gifts">;
@@ -78,51 +80,13 @@ export const GiftsScreen: React.FC<Props> = ({ navigation }) => {
     mutationFn: async (input: CreateGiftInput) => {
       if (!profile) throw new Error("Not signed in");
 
-      // 1. Create gift record on backend
+      // Create gift record in database
       const gift = await cryptoGiftService.createGift(
         profile.userId,
         profile.email,
         profile.displayName || undefined,
         input
       );
-
-      // 2. Fund the gift escrow if address is provided
-      const escrowAddress = gift.escrowAddress || process.env.ESCROW_CONTRACT_ADDRESS;
-
-      if (escrowAddress) {
-        console.log("🎁 Funding gift escrow:", escrowAddress);
-        const sendUserOpFn = async (calls: any[]) => {
-          console.log("🎁 Creating user operation for funding...");
-          return await sendUserOperation({
-            evmSmartAccount: profile.walletAddress as `0x${string}`,
-            network: "base-sepolia",
-            calls,
-            useCdpPaymaster: true,
-          });
-        };
-
-        const intent: TransferIntent = {
-          recipientEmail: gift.recipientEmail,
-          recipientAddress: escrowAddress,
-          amountUsdc: parseFloat(gift.amount),
-          memo: `Fund gift for ${gift.recipientEmail}`,
-          senderUserId: profile.userId,
-          senderEmail: profile.email,
-          senderName: profile.displayName,
-          skipNotification: true, // Don't send standard transfer email, gift service handles it
-        };
-
-        console.log("🎁 Executing funding transfer...");
-        const result = await sendUsdcWithPaymaster(
-          profile.walletAddress as `0x${string}`,
-          intent,
-          sendUserOpFn
-        );
-        console.log("🎁 Funding successful, tx:", result.txHash);
-      } else {
-        console.warn("⚠️ No escrow address returned for gift, skipping funding");
-        Alert.alert("Error", "Failed to resolve escrow address. Please contact support.");
-      }
 
       return gift;
     },
@@ -234,6 +198,25 @@ export const GiftsScreen: React.FC<Props> = ({ navigation }) => {
     }
   };
 
+  const handleCancelGift = async (gift: GiftSummary) => {
+    try {
+      const hasHardware = await LocalAuthentication.hasHardwareAsync();
+      if (hasHardware) {
+        const result = await LocalAuthentication.authenticateAsync({
+          promptMessage: "Confirm Gift Cancellation",
+        });
+        if (!result.success) {
+          return;
+        }
+      }
+    } catch (error) {
+      console.error("Biometric auth failed", error);
+      return;
+    }
+
+    cancelGiftMutation.mutate(gift);
+  };
+
   const handleSendGift = async () => {
     if (!form.recipientEmail || !form.amount) {
       Alert.alert("Required Fields", "Please provide recipient email and amount");
@@ -335,54 +318,39 @@ export const GiftsScreen: React.FC<Props> = ({ navigation }) => {
               const theme = cryptoGiftService.getGiftTheme(gift.theme);
               const isReceived = gift.direction === 'received';
               const isPending = gift.status === 'pending';
+              const explorerUrl = Constants?.expoConfig?.extra?.BASE_EXPLORER_URL;
+              const txHash = (gift as any).txHash || undefined;
+
+              const actions: Array<any> = [];
+              // Only show actions for pending gifts
+              if (gift.status === 'pending') {
+                if (isReceived) {
+                  actions.push({ label: "Claim", onPress: () => handleClaimGift(gift) });
+                } else {
+                  actions.push({
+                    label: "Share", onPress: () => {
+                      const link = cryptoGiftService.generateGiftLink(gift.giftId);
+                      Share.share({ message: `${theme.emoji} Gift for you: ${link}` });
+                    }
+                  });
+                  actions.push({ label: "Cancel", variant: "danger", onPress: () => handleCancelGift(gift) });
+                }
+              }
 
               return (
-                <View key={`${gift.direction}-${gift.giftId}`} style={styles.giftItem}>
-                  <View style={[styles.giftIcon, { backgroundColor: theme.backgroundColor }]}>
-                    <Text style={styles.giftEmoji}>{theme.emoji}</Text>
-                  </View>
-                  <View style={styles.giftDetails}>
-                    <Text style={styles.giftRecipient} numberOfLines={1} ellipsizeMode="middle">
-                      {isReceived
-                        ? `From: ${(gift.senderName && gift.senderName.trim()) || gift.senderEmail}`
-                        : `To: ${(gift.recipientName && gift.recipientName.trim()) || gift.recipientEmail}`}
-                    </Text>
-                    <View style={styles.giftMetaContainer}>
-                      <Text style={styles.giftAmount}>${gift.amount} {gift.token}</Text>
-                      <View style={[styles.directionBadge, isReceived ? styles.receivedBadge : styles.sentBadge]}>
-                        <Text style={[styles.directionText, isReceived ? styles.receivedText : styles.sentText]}>
-                          {isReceived ? 'Received' : 'Sent'}
-                        </Text>
-                      </View>
-                    </View>
-                    <Text style={styles.giftDate}>{new Date(gift.createdAt).toLocaleDateString()}</Text>
-                  </View>
-                  <View style={styles.giftStatus}>
-                    <View style={[styles.statusBadge, gift.status === 'claimed' ? styles.statusSuccess : styles.statusPending]}>
-                      <Text style={[styles.statusText, gift.status === 'claimed' ? styles.statusTextSuccess : styles.statusTextPending]}>
-                        {gift.status}
-                      </Text>
-                    </View>
-                    {isReceived && isPending ? (
-                      <TouchableOpacity
-                        style={styles.miniActionButton}
-                        onPress={() => handleClaimGift(gift)}
-                      >
-                        <Text style={styles.miniActionText}>Claim</Text>
-                      </TouchableOpacity>
-                    ) : (
-                      <TouchableOpacity
-                        style={styles.miniActionButton}
-                        onPress={() => {
-                          const link = cryptoGiftService.generateGiftLink(gift.giftId);
-                          Share.share({ message: `${theme.emoji} Gift for you: ${link}` });
-                        }}
-                      >
-                        <Text style={styles.miniActionText}>Share</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                </View>
+                <TransactionCard
+                  key={`${gift.direction}-${gift.giftId}`}
+                  icon={<View style={[styles.giftIcon, { backgroundColor: theme.backgroundColor }]}><Text style={styles.giftEmoji}>{theme.emoji}</Text></View>}
+                  title={isReceived ? `Gift from ${gift.senderName || gift.senderEmail}` : `Gift to ${gift.recipientName || gift.recipientEmail}`}
+                  subtitle={`${gift.status} · ${new Date(gift.createdAt).toLocaleDateString()}`}
+                  amount={`${isReceived ? "+" : "-"}${gift.amount} ${gift.token}`}
+                  date={new Date(gift.createdAt).toLocaleDateString()}
+                  statusText={gift.status}
+                  transactionHash={txHash}
+                  explorerUrl={explorerUrl}
+                  onPressHash={txHash ? () => Linking.openURL(`${explorerUrl}/tx/${txHash}`) : undefined}
+                  actions={actions}
+                />
               );
             })
           ) : (

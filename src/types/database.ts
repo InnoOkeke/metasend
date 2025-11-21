@@ -246,7 +246,13 @@ export type CryptoGift = {
   theme: GiftTheme;
   message?: string;
 
-  // Escrow (for unclaimed gifts)
+  // Gift claim code
+  giftCode: string; // Format: GIFT-THEME-RANDOM (e.g., GIFT-BDAY-X7K9M2)
+
+  // Link to pending transfer (for unregistered recipients)
+  pendingTransferId?: string;
+
+  // Escrow (for unclaimed gifts) - Legacy
   escrowAddress?: string;
   escrowPrivateKeyEncrypted?: string;
 

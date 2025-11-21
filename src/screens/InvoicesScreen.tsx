@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Alert, ActivityIndicator, TouchableOpacity, Share, Clipboard } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Alert, ActivityIndicator, TouchableOpacity, Share, Clipboard, Linking } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useSendUserOperation } from "@coinbase/cdp-hooks";
@@ -13,6 +13,8 @@ import { sendUsdcWithPaymaster, TransferIntent } from "../services/transfers";
 import { getUsdcBalance } from "../services/blockchain";
 import type { ColorPalette } from "../utils/theme";
 import { spacing, typography } from "../utils/theme";
+import Constants from "expo-constants";
+import { TransactionCard } from "../components/TransactionCard";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Invoices">;
 
@@ -171,45 +173,40 @@ export const InvoicesScreen: React.FC<Props> = ({ route, navigation }) => {
         {isLoadingInvoices ? (
           <ActivityIndicator color={colors.primary} />
         ) : myInvoices && myInvoices.length > 0 ? (
-          myInvoices.map((inv) => (
-            <View key={inv.invoiceId} style={styles.invoiceItem}>
-              <View style={styles.invoiceItemHeader}>
-                <View>
-                  <Text style={styles.invoiceItemNumber}>{inv.invoiceNumber}</Text>
-                  <Text style={styles.invoiceItemDate}>{new Date(inv.issueDate).toLocaleDateString()}</Text>
-                </View>
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={styles.invoiceItemAmount}>${inv.total} {inv.token}</Text>
-                  <View style={[styles.statusBadge, inv.status === 'paid' ? styles.statusSuccess : styles.statusPending]}>
-                    <Text style={[styles.statusText, inv.status === 'paid' ? styles.statusTextSuccess : styles.statusTextPending]}>
-                      {inv.status}
-                    </Text>
-                  </View>
-                </View>
-              </View>
+          myInvoices.map((inv) => {
+            const explorerUrl = Constants?.expoConfig?.extra?.BASE_EXPLORER_URL;
+            const txHash = (inv as any).txHash || undefined;
 
-              <View style={styles.actionButtons}>
-                <TouchableOpacity
-                  style={styles.actionButton}
-                  onPress={() => {
-                    const link = invoiceService.generateInvoiceLink(inv.invoiceId);
-                    Share.share({ message: `Invoice #${inv.invoiceNumber}: ${link}` });
-                  }}
-                >
-                  <Text style={styles.actionButtonText}>Share</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.actionButton}
-                  onPress={() => {
-                    Clipboard.setString(invoiceService.generateInvoiceLink(inv.invoiceId));
-                    Alert.alert("Copied", "Link copied to clipboard");
-                  }}
-                >
-                  <Text style={styles.actionButtonText}>Copy Link</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))
+            const actions: Array<any> = [];
+            // Only show actions for invoices that are not paid or cancelled
+            if (inv.status !== 'paid' && inv.status !== 'cancelled') {
+              actions.push({ label: "Share", onPress: () => {
+                const link = invoiceService.generateInvoiceLink(inv.invoiceId);
+                Share.share({ message: `Invoice #${inv.invoiceNumber}: ${link}` });
+              }});
+              actions.push({ label: "Copy Link", onPress: () => {
+                Clipboard.setString(invoiceService.generateInvoiceLink(inv.invoiceId));
+                Alert.alert("Copied", "Link copied to clipboard");
+              }});
+            }
+
+            const isSender = inv.fromEmail === profile?.email;
+
+            return (
+              <TransactionCard
+                key={inv.invoiceId}
+                title={`Invoice ${inv.invoiceNumber} ${isSender ? `to ${inv.toName}` : `from ${inv.fromName}`}`}
+                subtitle={`${inv.status} · ${new Date(inv.issueDate).toLocaleDateString()}`}
+                amount={`$${inv.total} ${inv.currency}`}
+                date={new Date(inv.issueDate).toLocaleDateString()}
+                statusText={inv.status}
+                transactionHash={txHash}
+                explorerUrl={explorerUrl}
+                onPressHash={txHash ? () => Linking.openURL(`${explorerUrl}/tx/${txHash}`) : undefined}
+                actions={actions}
+              />
+            );
+          })
         ) : (
           <Text style={styles.emptyText}>No invoices yet. Create your first one!</Text>
         )}

@@ -7,6 +7,9 @@ import { useCoinbase } from "../providers/CoinbaseProvider";
 import { useTheme } from "../providers/ThemeProvider";
 import { RootStackParamList } from "../navigation/RootNavigator";
 import { spacing, typography } from "../utils/theme";
+import { TransactionCard } from "../components/TransactionCard";
+import { Linking } from "react-native";
+import Constants from "expo-constants";
 import type { ColorPalette } from "../utils/theme";
 import { formatRelativeDate, formatShortAddress } from "../utils/format";
 import { listTransfers, TransferRecord } from "../services/transfers";
@@ -283,115 +286,100 @@ export const TransactionHistoryScreen: React.FC<Props> = ({ navigation }) => {
           (cancelTransferMutation.variables.transferId === effectiveTransferId ||
             (transfer.pendingTransferId && cancelTransferMutation.variables.placeholderId === transfer.pendingTransferId))
       );
+      const explorerUrl = Constants?.expoConfig?.extra?.BASE_EXPLORER_URL;
+      const txHash = transfer.txHash || undefined;
       return (
-        <View style={styles.activityCard}>
-          <View style={styles.activityIcon}>
-            <Text style={styles.activityEmoji}>📤</Text>
-          </View>
-          <View style={styles.activityContent}>
-            <Text style={styles.activityTitle}>Transfer to {transfer.intent.recipientEmail}</Text>
-            <Text style={styles.activitySubtitle}>
-              {pendingStatusLabel} · {formatRelativeDate(transfer.createdAt)}
-            </Text>
-            {canCancel && (
-              <TouchableOpacity 
-                style={styles.cancelButton}
-                onPress={() => handleCancelTransfer(transfer)}
-                disabled={cancelTransferMutation.isPending}
-              >
-                <Text style={styles.cancelButtonText}>
-                  {isCancelling ? "Cancelling..." : "Cancel Transfer"}
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
-          <Text style={styles.activityAmount}>{transfer.intent.amountUsdc.toFixed(2)} USDC</Text>
-        </View>
+        <TransactionCard
+          title={`Transfer to ${transfer.intent.recipientEmail}`}
+          subtitle={`${pendingStatusLabel} · ${formatRelativeDate(transfer.createdAt)}`}
+          amount={`${transfer.intent.amountUsdc.toFixed(2)} USDC`}
+          date={formatRelativeDate(transfer.createdAt)}
+          transactionHash={txHash}
+          explorerUrl={explorerUrl}
+          onPressHash={txHash ? () => Linking.openURL(`${explorerUrl}/tx/${txHash}`) : undefined}
+        >
+          {canCancel && (
+            <TouchableOpacity 
+              style={styles.cancelButton}
+              onPress={() => handleCancelTransfer(transfer)}
+              disabled={cancelTransferMutation.isPending}
+            >
+              <Text style={styles.cancelButtonText}>
+                {isCancelling ? "Cancelling..." : "Cancel Transfer"}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </TransactionCard>
       );
     }
 
     if (item.type === "blockchain") {
       const tx = item.data as BlockchainTransaction;
+      const explorerUrl = Constants?.expoConfig?.extra?.BASE_EXPLORER_URL;
       return (
-        <View style={styles.activityCard}>
-          <View style={styles.activityIcon}>
-            <Text style={styles.activityEmoji}>{tx.type === "sent" ? "📤" : "📥"}</Text>
-          </View>
-          <View style={styles.activityContent}>
-            <Text style={styles.activityTitle}>
-              {tx.type === "sent" ? "Sent to" : "Received from"} {formatShortAddress(tx.type === "sent" ? tx.to : tx.from)}
-            </Text>
-            <Text style={styles.activitySubtitle}>On-chain · {formatRelativeDate(tx.timestamp)}</Text>
-          </View>
-          <Text style={[styles.activityAmount, tx.type === "received" && styles.activityAmountPositive]}>
-            {tx.type === "sent" ? "-" : "+"}{tx.value.toFixed(2)} USDC
-          </Text>
-        </View>
+        <TransactionCard
+          title={`${tx.type === "sent" ? "Sent to" : "Received from"} ${formatShortAddress(tx.type === "sent" ? tx.to : tx.from)}`}
+          subtitle={`On-chain · ${formatRelativeDate(tx.timestamp)}`}
+          amount={`${tx.type === "sent" ? "-" : "+"}${tx.value.toFixed(2)} USDC`}
+          date={formatRelativeDate(tx.timestamp)}
+          transactionHash={tx.hash}
+          explorerUrl={explorerUrl}
+          onPressHash={tx.hash ? () => Linking.openURL(`${explorerUrl}/tx/${tx.hash}`) : undefined}
+        />
       );
     }
 
     if (item.type === "gift") {
       const gift = item.data as CryptoGift;
       const isSender = gift.fromEmail === profile?.email;
+      const explorerUrl = Constants?.expoConfig?.extra?.BASE_EXPLORER_URL;
+      const txHash = gift.txHash || undefined;
       return (
-        <View style={styles.activityCard}>
-          <View style={styles.activityIcon}>
-            <Text style={styles.activityEmoji}>🎁</Text>
-          </View>
-          <View style={styles.activityContent}>
-            <Text style={styles.activityTitle}>
-              {isSender ? `Gift sent to ${gift.toEmail || "link"}` : `Gift received from ${gift.fromName}`}
-            </Text>
-            <Text style={styles.activitySubtitle}>
-              {gift.status} · {formatRelativeDate(gift.createdAt)}
-            </Text>
-          </View>
-          <Text style={[styles.activityAmount, !isSender && styles.activityAmountPositive]}>
-            {isSender ? "-" : "+"}{gift.amount.toFixed(2)} {gift.currency}
-          </Text>
-        </View>
+        <TransactionCard
+          title={isSender ? `Gift sent to ${gift.toEmail || "link"}` : `Gift received from ${gift.fromName}`}
+          subtitle={`${gift.status} · ${formatRelativeDate(gift.createdAt)}`}
+          amount={`${isSender ? "-" : "+"}${gift.amount.toFixed(2)} ${gift.currency}`}
+          date={formatRelativeDate(gift.createdAt)}
+          transactionHash={txHash}
+          explorerUrl={explorerUrl}
+          onPressHash={txHash ? () => Linking.openURL(`${explorerUrl}/tx/${txHash}`) : undefined}
+        />
       );
     }
 
     if (item.type === "payment-request") {
       const request = item.data as PaymentRequest;
       const isRequester = request.fromEmail === profile?.email;
+      const explorerUrl = Constants?.expoConfig?.extra?.BASE_EXPLORER_URL;
+      const txHash = request.txHash || undefined;
       return (
-        <View style={styles.activityCard}>
-          <View style={styles.activityIcon}>
-            <Text style={styles.activityEmoji}>💸</Text>
-          </View>
-          <View style={styles.activityContent}>
-            <Text style={styles.activityTitle}>
-              {isRequester ? `Request to ${request.toEmail}` : `Request from ${request.fromEmail}`}
-            </Text>
-            <Text style={styles.activitySubtitle}>
-              {request.status} · {formatRelativeDate(request.createdAt)}
-            </Text>
-          </View>
-          <Text style={styles.activityAmount}>{request.amount.toFixed(2)} {request.currency}</Text>
-        </View>
+        <TransactionCard
+          title={isRequester ? `Request to ${request.toEmail}` : `Request from ${request.fromEmail}`}
+          subtitle={`${request.status} · ${formatRelativeDate(request.createdAt)}`}
+          amount={`${request.amount.toFixed(2)} ${request.currency}`}
+          date={formatRelativeDate(request.createdAt)}
+          transactionHash={txHash}
+          explorerUrl={explorerUrl}
+          onPressHash={txHash ? () => Linking.openURL(`${explorerUrl}/tx/${txHash}`) : undefined}
+        />
       );
     }
 
     if (item.type === "invoice") {
       const invoice = item.data as Invoice;
       const isSender = invoice.fromEmail === profile?.email;
+      const explorerUrl = Constants?.expoConfig?.extra?.BASE_EXPLORER_URL;
+      const txHash = invoice.txHash || undefined;
       return (
-        <View style={styles.activityCard}>
-          <View style={styles.activityIcon}>
-            <Text style={styles.activityEmoji}>📄</Text>
-          </View>
-          <View style={styles.activityContent}>
-            <Text style={styles.activityTitle}>
-              Invoice {invoice.invoiceNumber} {isSender ? `to ${invoice.toName}` : `from ${invoice.fromName}`}
-            </Text>
-            <Text style={styles.activitySubtitle}>
-              {invoice.status} · {formatRelativeDate(invoice.createdAt)}
-            </Text>
-          </View>
-          <Text style={styles.activityAmount}>{invoice.total.toFixed(2)} {invoice.currency}</Text>
-        </View>
+        <TransactionCard
+          title={`Invoice ${invoice.invoiceNumber} ${isSender ? `to ${invoice.toName}` : `from ${invoice.fromName}`}`}
+          subtitle={`${invoice.status} · ${formatRelativeDate(invoice.createdAt)}`}
+          amount={`${invoice.total.toFixed(2)} ${invoice.currency}`}
+          date={formatRelativeDate(invoice.createdAt)}
+          transactionHash={txHash}
+          explorerUrl={explorerUrl}
+          onPressHash={txHash ? () => Linking.openURL(`${explorerUrl}/tx/${txHash}`) : undefined}
+        />
       );
     }
 

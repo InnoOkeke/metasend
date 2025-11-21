@@ -6,7 +6,11 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { z } from "zod";
 import mongoDb from "../src/services/mongoDatabase";
+import { userDirectoryService } from "../src/services/UserDirectoryService";
+import { pendingTransferService } from "../src/services/PendingTransferService";
 import { CryptoGift, GiftStatus, GiftTheme } from "../src/types/database";
+import { USDC_TOKEN_ADDRESS, USDC_DECIMALS } from "../src/config/coinbase";
+import { generateGiftCode } from "../src/utils/giftCode";
 
 const CreateGiftSchema = z.object({
   senderUserId: z.string(),
@@ -20,9 +24,7 @@ const CreateGiftSchema = z.object({
   theme: z.enum(["birthday", "anniversary", "holiday", "thank_you", "congratulations", "red_envelope", "custom"]),
   message: z.string().optional(),
   expiresInDays: z.number().optional(),
-  escrowAddress: z.string().optional(),
-  escrowPrivateKeyEncrypted: z.string().optional(),
-  transactionHash: z.string().optional(),
+  transactionHash: z.string().optional(), // For registered users (direct send)
 });
 
 const ClaimGiftSchema = z.object({
@@ -73,25 +75,68 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ? new Date(Date.now() + data.expiresInDays * 24 * 60 * 60 * 1000).toISOString()
         : undefined;
 
-      const gift: CryptoGift = {
-        giftId,
-        senderUserId: data.senderUserId,
-        senderEmail: data.senderEmail.toLowerCase().trim(),
-        senderName: data.senderName,
-        recipientEmail: data.recipientEmail.toLowerCase().trim(),
-        recipientName: data.recipientName,
-        amount: data.amount,
-        token: data.token,
-        chain: data.chain,
-        theme: data.theme,
-        message: data.message,
-        escrowAddress: data.escrowAddress,
-        escrowPrivateKeyEncrypted: data.escrowPrivateKeyEncrypted,
-        status: "pending",
-        transactionHash: data.transactionHash,
-        createdAt: now,
-        expiresAt,
-      };
+      // Generate gift code
+      const giftCode = generateGiftCode(data.theme);
+
+      // Check if recipient is registered
+      const recipientUser = await userDirectoryService.findUserByEmail(data.recipientEmail.toLowerCase().trim());
+
+      let gift: CryptoGift;
+
+      if (!recipientUser) {
+        // Recipient not registered - create pending transfer
+        const transfer = await pendingTransferService.createPendingTransfer({
+          recipientEmail: data.recipientEmail.toLowerCase().trim(),
+          senderUserId: data.senderUserId,
+          amount: data.amount,
+          token: data.token,
+          tokenAddress: USDC_TOKEN_ADDRESS,
+          chain: data.chain,
+          decimals: USDC_DECIMALS,
+          message: data.message,
+        });
+
+        gift = {
+          giftId,
+          senderUserId: data.senderUserId,
+          senderEmail: data.senderEmail.toLowerCase().trim(),
+          senderName: data.senderName,
+          recipientEmail: data.recipientEmail.toLowerCase().trim(),
+          recipientName: data.recipientName,
+          amount: data.amount,
+          token: data.token,
+          chain: data.chain,
+          theme: data.theme,
+          message: data.message,
+          giftCode,
+          pendingTransferId: transfer.transferId,
+          status: "pending" as GiftStatus,
+          createdAt: now,
+          expiresAt,
+        };
+      } else {
+        // Recipient is registered - mark as sent directly
+        gift = {
+          giftId,
+          senderUserId: data.senderUserId,
+          senderEmail: data.senderEmail.toLowerCase().trim(),
+          senderName: data.senderName,
+          recipientEmail: data.recipientEmail.toLowerCase().trim(),
+          recipientUserId: recipientUser.userId,
+          recipientName: data.recipientName || recipientUser.displayName,
+          amount: data.amount,
+          token: data.token,
+          chain: data.chain,
+          theme: data.theme,
+          message: data.message,
+          giftCode,
+          status: "claimed" as GiftStatus, // Auto-claimed for registered users
+          transactionHash: data.transactionHash,
+          createdAt: now,
+          expiresAt,
+          claimedAt: now,
+        };
+      }
 
       await mongoDb.createGift(gift);
       return res.status(201).json(gift);
@@ -139,10 +184,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.status(400).json({ error: "Only pending gifts can be cancelled" });
         }
 
+        // If gift has a pending transfer, cancel it to trigger refund
+        if (gift.pendingTransferId) {
+          try {
+            await pendingTransferService.cancelPendingTransfer(gift.pendingTransferId, gift.senderUserId);
+          } catch (error) {
+            console.error("Error cancelling pending transfer:", error);
+            // Continue with gift cancellation even if transfer cancellation fails
+          }
+        }
+
         const updated = await mongoDb.updateGift(giftId as string, {
           status: "cancelled" as GiftStatus,
         });
-        return res.status(200).json(updated);
+
+        return res.status(200).json({
+          updated,
+          message: gift.pendingTransferId
+            ? "Gift cancelled. Funds will be refunded automatically."
+            : "Gift cancelled."
+        });
       }
 
       // Mark as expired (for background jobs)

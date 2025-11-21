@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Pressable, Alert, Share, Clipboard, Platform, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Pressable, Alert, Share, Clipboard, Platform, ActivityIndicator, Linking } from "react-native";
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -16,6 +16,8 @@ import { sendUsdcWithPaymaster, TransferIntent } from "../services/transfers";
 import { getUsdcBalance } from "../services/blockchain";
 import type { ColorPalette } from "../utils/theme";
 import { spacing, typography } from "../utils/theme";
+import Constants from "expo-constants";
+import { TransactionCard } from "../components/TransactionCard";
 type Props = NativeStackScreenProps<RootStackParamList, "PaymentRequests">;
 
 export const PaymentRequestsScreen: React.FC<Props> = ({ route, navigation }) => {
@@ -134,6 +136,22 @@ export const PaymentRequestsScreen: React.FC<Props> = ({ route, navigation }) =>
     },
     onError: (error) => {
       Alert.alert("Error", error instanceof Error ? error.message : "Failed to create payment request");
+    },
+  });
+
+  const cancelRequestMutation = useMutation({
+    mutationFn: async (requestId: string) => {
+      if (!profile?.userId) throw new Error("Not signed in");
+      return await paymentRequestService.cancelPaymentRequest(requestId, profile.userId);
+    },
+    onSuccess: () => {
+      refetchMy();
+      refetchReceived();
+      queryClient.invalidateQueries({ queryKey: ["payment-requests"] });
+      Alert.alert("Cancelled", "Payment request cancelled successfully");
+    },
+    onError: (error) => {
+      Alert.alert("Error", error instanceof Error ? error.message : "Failed to cancel request");
     },
   });
 
@@ -291,48 +309,55 @@ export const PaymentRequestsScreen: React.FC<Props> = ({ route, navigation }) =>
             allRequests.map((req) => {
               const isReceived = req.direction === 'received';
               const isPending = req.status === 'pending';
+              const explorerUrl = Constants?.expoConfig?.extra?.BASE_EXPLORER_URL;
+              const txHash = (req as any).txHash || undefined;
+
+              const actions: Array<any> = [];
+              // Only show actions when the request is pending
+              if (req.status === 'pending') {
+                if (isReceived) {
+                  actions.push({ label: "Pay", onPress: () => navigation.setParams({ requestId: req.requestId }) });
+                } else {
+                  actions.push({ label: "Share", onPress: () => {
+                    const link = paymentRequestService.generatePaymentRequestLink(req.requestId);
+                    Share.share({ message: `Pay me: ${link}` });
+                  }});
+
+                  // Creator can cancel their pending request
+                  actions.push({
+                    label: "Cancel",
+                    variant: "danger",
+                    onPress: () => {
+                      Alert.alert(
+                        "Cancel Request?",
+                        "This will mark the payment request as cancelled and notify the recipient.",
+                        [
+                          { text: "Keep Request", style: "cancel" },
+                          {
+                            text: "Cancel Request",
+                            style: "destructive",
+                            onPress: () => cancelRequestMutation.mutate(req.requestId),
+                          },
+                        ]
+                      );
+                    }
+                  });
+                }
+              }
 
               return (
-                <View key={`${req.direction}-${req.requestId}`} style={styles.requestItem}>
-                  <View style={styles.requestHeader}>
-                    <Text style={styles.requestAmount}>${req.amount} {req.token}</Text>
-                    <View style={[styles.directionBadge, isReceived ? styles.receivedBadge : styles.sentBadge]}>
-                      <Text style={[styles.directionText, isReceived ? styles.receivedText : styles.sentText]}>
-                        {isReceived ? '← Received' : '→ Sent'}
-                      </Text>
-                    </View>
-                  </View>
-                  <Text style={styles.requestDesc}>
-                    {isReceived ? `From: ${req.creatorName || req.creatorEmail}` : req.description}
-                  </Text>
-                  <Text style={styles.requestDate}>{new Date(req.createdAt).toLocaleDateString()}</Text>
-
-                  <View style={styles.requestActions}>
-                    <View style={[styles.statusBadge, req.status === 'paid' ? styles.statusSuccess : styles.statusPending]}>
-                      <Text style={[styles.statusText, req.status === 'paid' ? styles.statusTextSuccess : styles.statusTextPending]}>
-                        {req.status}
-                      </Text>
-                    </View>
-                    {isReceived && isPending ? (
-                      <TouchableOpacity
-                        style={styles.miniActionButton}
-                        onPress={() => navigation.setParams({ requestId: req.requestId })}
-                      >
-                        <Text style={styles.miniActionText}>Pay</Text>
-                      </TouchableOpacity>
-                    ) : (
-                      <TouchableOpacity
-                        style={styles.miniActionButton}
-                        onPress={() => {
-                          const link = paymentRequestService.generatePaymentRequestLink(req.requestId);
-                          Share.share({ message: `Pay me: ${link}` });
-                        }}
-                      >
-                        <Text style={styles.miniActionText}>Share</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                </View>
+                <TransactionCard
+                  key={`${req.direction}-${req.requestId}`}
+                  title={isReceived ? `Request from ${req.creatorName || req.creatorEmail}` : `Request to ${req.payerEmail || req.creatorEmail}`}
+                  subtitle={`${req.status} · ${new Date(req.createdAt).toLocaleDateString()}`}
+                  amount={`$${req.amount} ${req.token}`}
+                  date={new Date(req.createdAt).toLocaleDateString()}
+                  statusText={req.status}
+                  transactionHash={txHash}
+                  explorerUrl={explorerUrl}
+                  onPressHash={txHash ? () => Linking.openURL(`${explorerUrl}/tx/${txHash}`) : undefined}
+                  actions={actions}
+                />
               );
             })
           ) : (

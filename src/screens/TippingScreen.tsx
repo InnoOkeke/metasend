@@ -13,6 +13,9 @@ import { TextField } from "../components/TextField";
 import { tippingService, CreateTipJarInput } from "../services/TippingService";
 import { sendUsdcWithPaymaster, TransferIntent } from "../services/transfers";
 import { getUsdcBalance } from "../services/blockchain";
+import { TransactionCard } from "../components/TransactionCard";
+import Constants from "expo-constants";
+import { Linking } from "react-native";
 import type { ColorPalette } from "../utils/theme";
 import { spacing, typography } from "../utils/theme";
 
@@ -32,6 +35,7 @@ export const TippingScreen: React.FC<Props> = ({ route, navigation }) => {
   const [tipAmount, setTipAmount] = useState("");
   const [tipMessage, setTipMessage] = useState("");
   const [tipJarError, setTipJarError] = useState<string | null>(null);
+  const [tipAmountError, setTipAmountError] = useState<string | null>(null);
 
   const [form, setForm] = useState({
     title: "",
@@ -71,6 +75,16 @@ export const TippingScreen: React.FC<Props> = ({ route, navigation }) => {
     }
   }, [deepLinkJar]);
 
+  // Load recent tips for the deep-linked jar (if any)
+  const { data: recentTips = [], isLoading: isLoadingTips, refetch: refetchTips } = useQuery({
+    queryKey: ["tips", deepLinkJar?.jarId],
+    queryFn: async () => {
+      if (!deepLinkJar?.jarId) return [] as any[];
+      return await tippingService.getTipsForJar(deepLinkJar.jarId);
+    },
+    enabled: !!deepLinkJar?.jarId,
+  });
+
   // Handle errors for deep link fetching
   useEffect(() => {
     if (deepLinkError) {
@@ -90,8 +104,8 @@ export const TippingScreen: React.FC<Props> = ({ route, navigation }) => {
     enabled: !!profile,
   });
 
-  // Load USDC balance (optional)
-  useQuery({
+  // Load USDC balance (smart account balance)
+  const { data: usdcBalance } = useQuery({
     queryKey: ["usdcBalance", profile?.walletAddress],
     queryFn: async () => {
       if (!profile?.walletAddress) return null;
@@ -151,8 +165,15 @@ export const TippingScreen: React.FC<Props> = ({ route, navigation }) => {
   });
 
   const sendTipMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (amountArg?: string) => {
+      const usedAmount = amountArg ?? tipAmount;
       if (!profile?.walletAddress || !deepLinkJar) throw new Error("Not ready");
+      if (!usedAmount || isNaN(parseFloat(usedAmount))) throw new Error("Invalid amount");
+      // Check balance locally before attempting on-chain send
+      const numeric = parseFloat(usedAmount);
+      if (usdcBalance !== null && usdcBalance !== undefined && numeric > usdcBalance) {
+        throw new Error("Insufficient funds");
+      }
       const sendUserOpFn = async (calls: any[]) => {
         return await sendUserOperation({
           evmSmartAccount: profile.walletAddress as `0x${string}`,
@@ -164,7 +185,7 @@ export const TippingScreen: React.FC<Props> = ({ route, navigation }) => {
 
       const intent: TransferIntent = {
         recipientEmail: deepLinkJar.creatorEmail,
-        amountUsdc: parseFloat(tipAmount),
+        amountUsdc: parseFloat(usedAmount),
         memo: tipMessage || `Tip for ${deepLinkJar.title}`,
         senderUserId: profile.userId,
         senderEmail: profile.email,
@@ -187,7 +208,7 @@ export const TippingScreen: React.FC<Props> = ({ route, navigation }) => {
         profile.displayName || undefined,
         {
           jarId: deepLinkJar.jarId,
-          amount: tipAmount,
+          amount: usedAmount,
           token: "USDC",
           chain: "base",
           message: tipMessage,
@@ -211,10 +232,21 @@ export const TippingScreen: React.FC<Props> = ({ route, navigation }) => {
   });
 
   const handleSendTip = async () => {
+    // Validate amount
     if (!tipAmount || isNaN(parseFloat(tipAmount))) {
+      setTipAmountError("Enter a valid amount");
       Alert.alert("Invalid Amount", "Please enter a valid tip amount");
       return;
     }
+
+    const numeric = parseFloat(tipAmount);
+    if (usdcBalance !== null && usdcBalance !== undefined && numeric > usdcBalance) {
+      setTipAmountError("Insufficient funds");
+      Alert.alert("Insufficient Funds", `Your balance is $${usdcBalance.toFixed(2)}`);
+      return;
+    }
+
+    setTipAmountError(null);
     setIsAuthenticating(true);
     try {
       const hasHardware = await LocalAuthentication.hasHardwareAsync();
@@ -225,7 +257,41 @@ export const TippingScreen: React.FC<Props> = ({ route, navigation }) => {
           return;
         }
       }
-      sendTipMutation.mutate();
+
+      // Pass amount as arg to mutation so we can trigger preset sends too
+      sendTipMutation.mutate(tipAmount);
+    } catch (e) {
+      Alert.alert("Error", "Authentication failed");
+    } finally {
+      setIsAuthenticating(false);
+    }
+  };
+
+  const performAuthenticatedSend = async (amountToSend: string) => {
+    if (!amountToSend || isNaN(parseFloat(amountToSend))) {
+      Alert.alert("Invalid Amount", "Please enter a valid tip amount");
+      return;
+    }
+    const numeric = parseFloat(amountToSend);
+    if (usdcBalance !== null && usdcBalance !== undefined && numeric > usdcBalance) {
+      Alert.alert("Insufficient Funds", `Your balance is $${usdcBalance.toFixed(2)}`);
+      return;
+    }
+
+    setIsAuthenticating(true);
+    try {
+      const hasHardware = await LocalAuthentication.hasHardwareAsync();
+      if (hasHardware) {
+        const result = await LocalAuthentication.authenticateAsync({ promptMessage: "Confirm Tip" });
+        if (!result.success) {
+          setIsAuthenticating(false);
+          return;
+        }
+      }
+
+      // Update tipAmount so UI reflects selection, then call mutation with explicit amount
+      setTipAmount(String(amountToSend));
+      sendTipMutation.mutate(String(amountToSend));
     } catch (e) {
       Alert.alert("Error", "Authentication failed");
     } finally {
@@ -286,37 +352,23 @@ export const TippingScreen: React.FC<Props> = ({ route, navigation }) => {
           {isLoadingJars ? (
             <Text style={styles.emptyText}>Loading...</Text>
           ) : tipJars && tipJars.length > 0 ? (
-            tipJars.map((jar) => (
-              <View key={jar.jarId} style={styles.jarItem}>
-                <View style={styles.jarHeader}>
-                  <Text style={styles.jarTitle}>{jar.title}</Text>
-                  <View style={[styles.statusBadge, jar.status === "active" ? styles.statusActive : styles.statusInactive]}>
-                    <Text style={[styles.statusText, jar.status === "active" ? styles.statusTextActive : styles.statusTextInactive]}>{jar.status}</Text>
-                  </View>
-                </View>
-                <Text style={styles.jarStats}>{jar.tipCount} tips • ${jar.totalTipsReceived.toFixed(2)} received</Text>
-                <View style={styles.jarActions}>
-                  <TouchableOpacity
-                    style={styles.actionButton}
-                    onPress={() => {
-                      const link = tippingService.generateTipJarLink(jar.jarId);
-                      Share.share({ message: `Support me: ${link}` });
-                    }}
-                  >
-                    <Text style={styles.actionButtonText}>Share Link</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.actionButton}
-                    onPress={() => {
-                      Clipboard.setString(tippingService.generateTipJarLink(jar.jarId));
-                      Alert.alert("Copied", "Link copied to clipboard");
-                    }}
-                  >
-                    <Text style={styles.actionButtonText}>Copy</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ))
+            tipJars.map((jar) => {
+              const link = tippingService.generateTipJarLink(jar.jarId);
+              return (
+                <TransactionCard
+                  key={jar.jarId}
+                  icon={<View style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center' }}><Text style={{ color: colors.background, fontWeight: '700' }}>$</Text></View>}
+                  title={jar.title}
+                  subtitle={`${jar.tipCount} tips • $${jar.totalTipsReceived.toFixed(2)} received`}
+                  amount={undefined}
+                  statusText={jar.status}
+                  actions={[
+                    { label: 'Share Link', onPress: () => Share.share({ message: `Support me: ${link}` }), variant: 'primary' },
+                    { label: 'Copy', onPress: () => { Clipboard.setString(link); Alert.alert('Copied', 'Link copied to clipboard'); }, variant: 'secondary' },
+                  ]}
+                />
+              );
+            })
           ) : (
             <Text style={styles.emptyText}>No tip jars yet. Create one to get started!</Text>
           )}
@@ -356,12 +408,55 @@ export const TippingScreen: React.FC<Props> = ({ route, navigation }) => {
               <Text style={styles.modalTitle}>Tip {deepLinkJar.title}</Text>
               <Text style={styles.modalSubtitle}>Created by {deepLinkJar.creatorName}</Text>
               <TextField label="Amount (USDC)" value={tipAmount} onChangeText={setTipAmount} keyboardType="numeric" />
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginVertical: spacing.sm }}>
+                {SUGGESTED_TIPS.map((amt) => (
+                  <TouchableOpacity
+                    key={amt}
+                    style={[
+                      { paddingHorizontal: spacing.sm, paddingVertical: 6, borderRadius: 12, borderWidth: 1 },
+                      tipAmount === String(amt) ? { backgroundColor: colors.primary, borderColor: colors.primary } : { backgroundColor: colors.background, borderColor: colors.border },
+                    ]}
+                    onPress={() => { setTipAmount(String(amt)); setTipAmountError(null); }}
+                  >
+                    <Text style={{ color: tipAmount === String(amt) ? colors.background : colors.textPrimary, fontWeight: '600' }}>${amt}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={{ ...typography.caption, color: colors.textSecondary, marginBottom: spacing.xs }}>
+                Wallet balance: {usdcBalance !== null && usdcBalance !== undefined ? `$${usdcBalance.toFixed(2)}` : '—'}
+              </Text>
+              {tipAmountError ? <Text style={{ color: colors.error, marginBottom: spacing.xs }}>{tipAmountError}</Text> : null}
               <TextField label="Message (optional)" value={tipMessage} onChangeText={setTipMessage} />
               {isAuthenticating ? (
                 <ActivityIndicator size="large" color={colors.primary} />
               ) : (
                 <PrimaryButton title="Send Tip" onPress={handleSendTip} />
               )}
+                  {/* Recent tips for this jar */}
+                  <Text style={[styles.sectionHeader, { marginTop: spacing.md }]}>Recent Tips</Text>
+                  {isLoadingTips ? (
+                    <ActivityIndicator color={colors.primary} />
+                  ) : recentTips && recentTips.length > 0 ? (
+                    recentTips.map((tip: any) => {
+                      const txHash = tip.transactionHash || tip.transactionHash;
+                      return (
+                        <TransactionCard
+                          key={tip.tipId}
+                          icon={<View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center' }}><Text style={{ color: colors.background, fontWeight: '700' }}>$</Text></View>}
+                          title={tip.isAnonymous ? "Anonymous" : tip.tipperName || tip.tipperEmail}
+                          subtitle={new Date(tip.createdAt).toLocaleString()}
+                          amount={`+${tip.amount} ${tip.token}`}
+                          date={new Date(tip.createdAt).toLocaleString()}
+                          transactionHash={txHash}
+                          explorerUrl={Constants?.expoConfig?.extra?.BASE_EXPLORER_URL}
+                          onPressHash={txHash ? () => Linking.openURL(`${Constants?.expoConfig?.extra?.BASE_EXPLORER_URL}/tx/${txHash}`) : undefined}
+                        />
+                      );
+                    })
+                  ) : (
+                    <Text style={styles.emptyText}>No tips yet</Text>
+                  )}
               <TouchableOpacity style={styles.modalClose} onPress={() => setShowTipModal(false)}>
                 <Text style={styles.modalCloseText}>Cancel</Text>
               </TouchableOpacity>

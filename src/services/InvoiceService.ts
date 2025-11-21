@@ -43,7 +43,20 @@ export type InvoiceSummary = {
   paidAt?: string;
 };
 
+declare const require: any;
+
+const getApiBaseUrl = () => {
+  try {
+    const Constants = require("expo-constants").default;
+    return Constants?.expoConfig?.extra?.metasendApiBaseUrl || process.env.METASEND_API_BASE_URL || "https://metasend-api.onrender.com";
+  } catch (_error) {
+    return process.env.METASEND_API_BASE_URL || "https://metasend-api.onrender.com";
+  }
+};
+
 class InvoiceService {
+  private readonly apiBaseUrl = getApiBaseUrl();
+
   /**
    * Create a new invoice
    */
@@ -56,72 +69,69 @@ class InvoiceService {
   ): Promise<Invoice> {
     const validated = CreateInvoiceSchema.parse(input);
 
-    const now = new Date();
-    const invoiceNumber = this.generateInvoiceNumber();
+    const response = await fetch(`${this.apiBaseUrl}/api/invoices`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        creatorUserId,
+        creatorEmail,
+        creatorName,
+        creatorAddress,
+        ...validated,
+      }),
+    });
 
-    const invoice: Invoice = {
-      invoiceId: `inv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      invoiceNumber,
-      creatorUserId,
-      creatorEmail,
-      creatorName,
-      creatorAddress,
-      clientEmail: validated.clientEmail,
-      clientName: validated.clientName,
-      clientAddress: validated.clientAddress,
-      items: validated.items as InvoiceItem[],
-      subtotal: validated.subtotal,
-      tax: validated.tax,
-      taxRate: validated.taxRate,
-      total: validated.total,
-      token: validated.token,
-      chain: validated.chain,
-      status: "draft",
-      issueDate: now.toISOString(),
-      dueDate: validated.dueDate,
-      notes: validated.notes,
-      createdAt: now.toISOString(),
-      updatedAt: now.toISOString(),
-    };
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error ? JSON.stringify(errorData.error) : "Failed to create invoice");
+    }
 
-    // TODO: Save to database
-    console.log("📄 Invoice created:", invoice);
-
-    return invoice;
+    return await response.json();
   }
 
   /**
    * Get invoice by ID
    */
   async getInvoice(invoiceId: string): Promise<Invoice | null> {
-    // TODO: Fetch from database
-    return null;
+    const response = await fetch(`${this.apiBaseUrl}/api/invoices?invoiceId=${invoiceId}`);
+    if (!response.ok) {
+      return null;
+    }
+    return await response.json();
   }
 
   /**
    * Get invoices created by user
    */
   async getMyInvoices(userId: string): Promise<InvoiceSummary[]> {
-    // TODO: Fetch from database
-    return [];
+    const response = await fetch(`${this.apiBaseUrl}/api/invoices?creatorUserId=${userId}`);
+    if (!response.ok) {
+      return [];
+    }
+    return await response.json();
   }
 
   /**
    * Get invoices for client email
    */
   async getInvoicesForClient(email: string): Promise<InvoiceSummary[]> {
-    // TODO: Fetch from database
-    return [];
+    const response = await fetch(`${this.apiBaseUrl}/api/invoices?clientEmail=${email}`);
+    if (!response.ok) {
+      return [];
+    }
+    return await response.json();
   }
 
   /**
    * Send invoice to client
    */
   async sendInvoice(invoiceId: string, userId: string): Promise<void> {
-    // TODO: Verify user is creator
-    // TODO: Update status to "sent"
-    // TODO: Send email to client with payment link
-    console.log("📧 Invoice sent:", invoiceId);
+    const response = await fetch(`${this.apiBaseUrl}/api/invoices?invoiceId=${invoiceId}&action=send`, {
+      method: "PATCH",
+    });
+    if (!response.ok) {
+      throw new Error("Failed to send invoice");
+    }
   }
 
   /**
@@ -131,28 +141,33 @@ class InvoiceService {
     invoiceId: string,
     transactionHash: string
   ): Promise<void> {
-    // TODO: Update database
-    // TODO: Send payment confirmation emails
-    console.log("✅ Invoice paid:", invoiceId);
+    const response = await fetch(`${this.apiBaseUrl}/api/invoices?invoiceId=${invoiceId}&action=pay`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ transactionHash }),
+    });
+    if (!response.ok) {
+      throw new Error("Failed to mark invoice as paid");
+    }
   }
 
   /**
    * Cancel invoice
    */
   async cancelInvoice(invoiceId: string, userId: string): Promise<void> {
-    // TODO: Verify user is creator
-    // TODO: Update database
-    // TODO: Send cancellation email
-    console.log("❌ Invoice cancelled:", invoiceId);
+    const response = await fetch(`${this.apiBaseUrl}/api/invoices?invoiceId=${invoiceId}&action=cancel`, {
+      method: "PATCH",
+    });
+    if (!response.ok) {
+      throw new Error("Failed to cancel invoice");
+    }
   }
 
   /**
    * Check for overdue invoices
    */
   async checkOverdueInvoices(): Promise<void> {
-    // TODO: Query database for unpaid invoices past due date
-    // TODO: Update status to "overdue"
-    // TODO: Send overdue reminders
+    // This would typically be a background job on the server
     console.log("⏰ Checking for overdue invoices...");
   }
 

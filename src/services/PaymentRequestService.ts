@@ -31,6 +31,8 @@ export type CreatePaymentRequestInput = z.infer<typeof CreatePaymentRequestSchem
 
 export type PaymentRequestSummary = {
   requestId: string;
+  creatorEmail: string;
+  creatorName?: string;
   amount: string;
   token: string;
   description: string;

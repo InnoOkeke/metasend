@@ -94,7 +94,7 @@ export async function sendUsdcWithPaymaster(
     amount: intent.amountUsdc,
   });
 
-  const { recipientEmail, amountUsdc } = intent;
+  const { recipientEmail, recipientAddress: directAddress, amountUsdc } = intent;
 
   if (amountUsdc <= 0) {
     throw new Error("Amount must be greater than zero.");
@@ -110,18 +110,25 @@ export async function sendUsdcWithPaymaster(
   }
 
   const senderAddress = assertHexAddress(walletAddress, "Sender wallet");
+  let recipientAddress: `0x${string}`;
+  let contact: { isRegistered: boolean; walletAddress?: string; displayName?: string } = { isRegistered: false };
 
-  console.log("🔍 Resolving recipient:", recipientEmail);
-  const contact = await resolveEmailToWallet({ email: recipientEmail });
-  console.log("✅ Recipient resolved:", { isRegistered: contact.isRegistered, wallet: contact.walletAddress?.slice(0, 6) });
+  if (directAddress) {
+    console.log("🔗 Using direct recipient address:", directAddress);
+    recipientAddress = assertHexAddress(directAddress, "Recipient address");
+    contact = { isRegistered: true, walletAddress: directAddress };
+  } else {
+    console.log("🔍 Resolving recipient:", recipientEmail);
+    contact = await resolveEmailToWallet({ email: recipientEmail });
+    console.log("✅ Recipient resolved:", { isRegistered: contact.isRegistered, wallet: contact.walletAddress?.slice(0, 6) });
 
-  if (!contact.isRegistered || !contact.walletAddress) {
-    console.log("📧 Creating pending transfer (unregistered user)");
-    const pendingRecord = await enqueuePendingTransfer(senderAddress, intent);
-    return pendingRecord;
+    if (!contact.isRegistered || !contact.walletAddress) {
+      console.log("📧 Creating pending transfer (unregistered user)");
+      const pendingRecord = await enqueuePendingTransfer(senderAddress, intent);
+      return pendingRecord;
+    }
+    recipientAddress = assertHexAddress(contact.walletAddress, "Recipient wallet");
   }
-
-  const recipientAddress = assertHexAddress(contact.walletAddress, "Recipient wallet");
 
   // Encode USDC transfer call
   console.log("📝 Encoding USDC transfer");
@@ -158,16 +165,20 @@ export async function sendUsdcWithPaymaster(
   const recipientName = contact.displayName ?? intent.recipientEmail;
   const amountDisplay = intent.amountUsdc.toString();
 
-  const notificationPromises: Promise<boolean>[] = [
-    emailNotificationService.sendTransferNotification(
-      intent.recipientEmail,
-      recipientName,
-      senderName,
-      amountDisplay,
-      DEFAULT_TOKEN_SYMBOL,
-      BASE_CHAIN_NAME
-    ),
-  ];
+  const notificationPromises: Promise<boolean>[] = [];
+
+  if (!intent.skipNotification) {
+    notificationPromises.push(
+      emailNotificationService.sendTransferNotification(
+        intent.recipientEmail,
+        recipientName,
+        senderName,
+        amountDisplay,
+        DEFAULT_TOKEN_SYMBOL,
+        BASE_CHAIN_NAME
+      )
+    );
+  }
 
   if (intent.senderEmail) {
     notificationPromises.push(

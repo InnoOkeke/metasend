@@ -1,26 +1,34 @@
 import React, { useMemo, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Pressable, Alert, Share, Clipboard, Platform } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Pressable, Alert, Share, Clipboard, Platform, ActivityIndicator } from "react-native";
+import * as LocalAuthentication from "expo-local-authentication";
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RootStackParamList } from "../navigation/RootNavigator";
 import { useCoinbase } from "../providers/CoinbaseProvider";
 import { useTheme } from "../providers/ThemeProvider";
 import { PrimaryButton } from "../components/PrimaryButton";
 import { TextField } from "../components/TextField";
-import { cryptoGiftService, CreateGiftInput } from "../services/CryptoGiftService";
+import { useSendUserOperation } from "@coinbase/cdp-hooks";
+import { cryptoGiftService, CreateGiftInput, GiftSummary } from "../services/CryptoGiftService";
+import { sendUsdcWithPaymaster, TransferIntent } from "../services/transfers";
 import { GiftTheme } from "../types/database";
 import type { ColorPalette } from "../utils/theme";
 import { spacing, typography } from "../utils/theme";
+import { getUsdcBalance } from "../services/blockchain";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Gifts">;
 
-export const GiftsScreen: React.FC<Props> = () => {
+export const GiftsScreen: React.FC<Props> = ({ navigation }) => {
   const { profile } = useCoinbase();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const { sendUserOperation } = useSendUserOperation();
+  const queryClient = useQueryClient();
 
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showClaimModal, setShowClaimModal] = useState(false);
+  const [selectedGift, setSelectedGift] = useState<GiftSummary & { direction: 'sent' | 'received' } | null>(null);
   const [form, setForm] = useState({
     recipientEmail: "",
     recipientName: "",
@@ -31,18 +39,98 @@ export const GiftsScreen: React.FC<Props> = () => {
 
   const themes = cryptoGiftService.getAllThemes();
 
+  // Fetch sent gifts
+  const { data: sentGifts, isLoading: isLoadingSent, refetch: refetchSent } = useQuery({
+    queryKey: ["gifts", "sent", profile?.userId],
+    queryFn: () => cryptoGiftService.getSentGifts(profile!.userId),
+    enabled: !!profile?.userId,
+  });
+
+  // Fetch received gifts
+  const { data: receivedGifts, isLoading: isLoadingReceived, refetch: refetchReceived } = useQuery({
+    queryKey: ["gifts", "received", profile?.email],
+    queryFn: () => cryptoGiftService.getReceivedGifts(profile!.email!),
+    enabled: !!profile?.email,
+  });
+
+  // Combine and sort gifts by date (most recent first)
+  const allGifts = useMemo(() => {
+    const sent = (sentGifts || []).map(g => ({ ...g, direction: 'sent' as const }));
+    const received = (receivedGifts || []).map(g => ({ ...g, direction: 'received' as const }));
+    return [...sent, ...received].sort((a, b) =>
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  }, [sentGifts, receivedGifts]);
+
+  const isLoadingGifts = isLoadingSent || isLoadingReceived;
+
+  // Query USDC balance
+  const { data: usdcBalance } = useQuery({
+    queryKey: ["usdcBalance", profile?.walletAddress],
+    queryFn: () => {
+      if (!profile?.walletAddress) throw new Error("No wallet");
+      return getUsdcBalance(profile.walletAddress as `0x${string}`);
+    },
+    enabled: !!profile?.walletAddress,
+  });
+
   const createGiftMutation = useMutation({
     mutationFn: async (input: CreateGiftInput) => {
       if (!profile) throw new Error("Not signed in");
 
-      return await cryptoGiftService.createGift(
+      // 1. Create gift record on backend
+      const gift = await cryptoGiftService.createGift(
         profile.userId,
         profile.email,
         profile.displayName || undefined,
         input
       );
+
+      // 2. Fund the gift escrow if address is provided
+      const escrowAddress = gift.escrowAddress || process.env.ESCROW_CONTRACT_ADDRESS;
+
+      if (escrowAddress) {
+        console.log("🎁 Funding gift escrow:", escrowAddress);
+        const sendUserOpFn = async (calls: any[]) => {
+          console.log("🎁 Creating user operation for funding...");
+          return await sendUserOperation({
+            evmSmartAccount: profile.walletAddress as `0x${string}`,
+            network: "base-sepolia",
+            calls,
+            useCdpPaymaster: true,
+          });
+        };
+
+        const intent: TransferIntent = {
+          recipientEmail: gift.recipientEmail,
+          recipientAddress: escrowAddress,
+          amountUsdc: parseFloat(gift.amount),
+          memo: `Fund gift for ${gift.recipientEmail}`,
+          senderUserId: profile.userId,
+          senderEmail: profile.email,
+          senderName: profile.displayName,
+          skipNotification: true, // Don't send standard transfer email, gift service handles it
+        };
+
+        console.log("🎁 Executing funding transfer...");
+        const result = await sendUsdcWithPaymaster(
+          profile.walletAddress as `0x${string}`,
+          intent,
+          sendUserOpFn
+        );
+        console.log("🎁 Funding successful, tx:", result.txHash);
+      } else {
+        console.warn("⚠️ No escrow address returned for gift, skipping funding");
+        Alert.alert("Error", "Failed to resolve escrow address. Please contact support.");
+      }
+
+      return gift;
     },
     onSuccess: async (gift) => {
+      refetchSent();
+      refetchReceived();
+      queryClient.invalidateQueries({ queryKey: ["usdcBalance"] });
+
       const link = cryptoGiftService.generateGiftLink(gift.giftId);
       const themeConfig = cryptoGiftService.getGiftTheme(gift.theme);
 
@@ -81,10 +169,111 @@ export const GiftsScreen: React.FC<Props> = () => {
     },
   });
 
-  const handleSendGift = () => {
+  const claimGiftMutation = useMutation({
+    mutationFn: async (gift: GiftSummary) => {
+      if (!profile?.userId || !profile?.email || !profile?.walletAddress) {
+        throw new Error("Not signed in");
+      }
+
+      // Call the backend to claim the gift
+      const txHash = await cryptoGiftService.claimGift(
+        gift.giftId,
+        profile.userId,
+        profile.email,
+        "" // Backend generates hash
+      );
+
+      return { gift, txHash };
+    },
+    onSuccess: ({ gift, txHash }) => {
+      setShowClaimModal(false);
+      setSelectedGift(null);
+      refetchSent();
+      refetchReceived();
+      queryClient.invalidateQueries({ queryKey: ["usdcBalance"] });
+
+      Alert.alert(
+        "🎉 Gift Claimed!",
+        `You've successfully claimed ${gift.amount} ${gift.token}!\n\nThe funds are now in your wallet.\n\nTx: ${txHash.slice(0, 10)}...`,
+        [{ text: "Great!" }]
+      );
+    },
+    onError: (error) => {
+      setShowClaimModal(false);
+      Alert.alert(
+        "Claim Failed",
+        error instanceof Error ? error.message : "Failed to claim gift. Please try again."
+      );
+    },
+  });
+
+  const cancelGiftMutation = useMutation({
+    mutationFn: async (gift: GiftSummary) => {
+      if (!profile?.userId) throw new Error("Not signed in");
+      await cryptoGiftService.cancelGift(gift.giftId, profile.userId);
+      return gift;
+    },
+    onSuccess: (gift) => {
+      refetchSent();
+      queryClient.invalidateQueries({ queryKey: ["usdcBalance"] });
+      Alert.alert("Gift Cancelled", "The gift has been cancelled and funds will be returned to your wallet.");
+    },
+    onError: (error) => {
+      Alert.alert("Error", error instanceof Error ? error.message : "Failed to cancel gift");
+    },
+  });
+
+  const handleClaimGift = (gift: GiftSummary & { direction: 'sent' | 'received' }) => {
+    setSelectedGift(gift);
+    setShowClaimModal(true);
+  };
+
+  const confirmClaim = () => {
+    if (selectedGift) {
+      claimGiftMutation.mutate(selectedGift);
+    }
+  };
+
+  const handleSendGift = async () => {
     if (!form.recipientEmail || !form.amount) {
       Alert.alert("Required Fields", "Please provide recipient email and amount");
       return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(form.recipientEmail)) {
+      Alert.alert("Invalid Email", "Please enter a valid email address");
+      return;
+    }
+
+    const amount = parseFloat(form.amount);
+    if (isNaN(amount) || amount <= 0) {
+      Alert.alert("Invalid Amount", "Please enter a valid amount");
+      return;
+    }
+
+    if (usdcBalance === undefined) {
+      Alert.alert("Error", "Unable to fetch wallet balance. Please try again.");
+      return;
+    }
+
+    if (amount > usdcBalance) {
+      Alert.alert("Insufficient Balance", `You have $${usdcBalance.toFixed(2)} USDC available.`);
+      return;
+    }
+
+    try {
+      const hasHardware = await LocalAuthentication.hasHardwareAsync();
+      if (hasHardware) {
+        const result = await LocalAuthentication.authenticateAsync({
+          promptMessage: "Confirm Gift Sending",
+        });
+        if (!result.success) {
+          return;
+        }
+      }
+    } catch (error) {
+      console.error("Biometric auth failed", error);
     }
 
     createGiftMutation.mutate({
@@ -138,8 +327,67 @@ export const GiftsScreen: React.FC<Props> = () => {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>📦 Your Gifts</Text>
-          <Text style={styles.emptyText}>No gifts sent yet</Text>
+          <Text style={styles.cardTitle}>📦 Transaction History</Text>
+          {isLoadingGifts ? (
+            <ActivityIndicator color={colors.primary} />
+          ) : allGifts && allGifts.length > 0 ? (
+            allGifts.map((gift) => {
+              const theme = cryptoGiftService.getGiftTheme(gift.theme);
+              const isReceived = gift.direction === 'received';
+              const isPending = gift.status === 'pending';
+
+              return (
+                <View key={`${gift.direction}-${gift.giftId}`} style={styles.giftItem}>
+                  <View style={[styles.giftIcon, { backgroundColor: theme.backgroundColor }]}>
+                    <Text style={styles.giftEmoji}>{theme.emoji}</Text>
+                  </View>
+                  <View style={styles.giftDetails}>
+                    <Text style={styles.giftRecipient} numberOfLines={1} ellipsizeMode="middle">
+                      {isReceived
+                        ? `From: ${(gift.senderName && gift.senderName.trim()) || gift.senderEmail}`
+                        : `To: ${(gift.recipientName && gift.recipientName.trim()) || gift.recipientEmail}`}
+                    </Text>
+                    <View style={styles.giftMetaContainer}>
+                      <Text style={styles.giftAmount}>${gift.amount} {gift.token}</Text>
+                      <View style={[styles.directionBadge, isReceived ? styles.receivedBadge : styles.sentBadge]}>
+                        <Text style={[styles.directionText, isReceived ? styles.receivedText : styles.sentText]}>
+                          {isReceived ? 'Received' : 'Sent'}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={styles.giftDate}>{new Date(gift.createdAt).toLocaleDateString()}</Text>
+                  </View>
+                  <View style={styles.giftStatus}>
+                    <View style={[styles.statusBadge, gift.status === 'claimed' ? styles.statusSuccess : styles.statusPending]}>
+                      <Text style={[styles.statusText, gift.status === 'claimed' ? styles.statusTextSuccess : styles.statusTextPending]}>
+                        {gift.status}
+                      </Text>
+                    </View>
+                    {isReceived && isPending ? (
+                      <TouchableOpacity
+                        style={styles.miniActionButton}
+                        onPress={() => handleClaimGift(gift)}
+                      >
+                        <Text style={styles.miniActionText}>Claim</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.miniActionButton}
+                        onPress={() => {
+                          const link = cryptoGiftService.generateGiftLink(gift.giftId);
+                          Share.share({ message: `${theme.emoji} Gift for you: ${link}` });
+                        }}
+                      >
+                        <Text style={styles.miniActionText}>Share</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              );
+            })
+          ) : (
+            <Text style={styles.emptyText}>No gifts yet</Text>
+          )}
         </View>
       </ScrollView>
 
@@ -225,6 +473,59 @@ export const GiftsScreen: React.FC<Props> = () => {
                 disabled={createGiftMutation.isPending}
               />
             </KeyboardAwareScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Claim Gift Modal */}
+      <Modal
+        visible={showClaimModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => !claimGiftMutation.isPending && setShowClaimModal(false)}
+        statusBarTranslucent
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { maxHeight: '50%' }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Claim Gift</Text>
+              {!claimGiftMutation.isPending && (
+                <Pressable onPress={() => setShowClaimModal(false)} style={styles.modalClose}>
+                  <Text style={styles.modalCloseText}>✕</Text>
+                </Pressable>
+              )}
+            </View>
+
+            <View style={styles.modalBody}>
+              {selectedGift && (
+                <>
+                  {(() => {
+                    const theme = cryptoGiftService.getGiftTheme(selectedGift.theme);
+                    return (
+                      <View style={{ alignItems: 'center', marginBottom: spacing.lg }}>
+                        <Text style={{ fontSize: 64, marginBottom: spacing.sm }}>{theme.emoji}</Text>
+                        <Text style={[typography.title, { color: colors.textPrimary, textAlign: 'center', marginBottom: spacing.xs }]}>
+                          {theme.name}
+                        </Text>
+                        <Text style={[typography.title, { color: colors.primary, marginBottom: spacing.sm, fontSize: 24 }]}>
+                          ${selectedGift.amount} {selectedGift.token}
+                        </Text>
+                        <Text style={[typography.body, { color: colors.textSecondary, textAlign: 'center' }]}>
+                          From: {selectedGift.senderName || selectedGift.senderEmail}
+                        </Text>
+                      </View>
+                    );
+                  })()}
+
+                  <PrimaryButton
+                    title={claimGiftMutation.isPending ? "Claiming..." : "Claim Now"}
+                    onPress={confirmClaim}
+                    loading={claimGiftMutation.isPending}
+                    disabled={claimGiftMutation.isPending}
+                  />
+                </>
+              )}
+            </View>
           </View>
         </View>
       </Modal>
@@ -381,5 +682,117 @@ const createStyles = (colors: ColorPalette) =>
       fontSize: 11,
       fontWeight: "600",
       textAlign: "center",
+    },
+
+    // Gift Item Styles
+    giftItem: {
+      flexDirection: "row",
+      padding: spacing.md,
+      backgroundColor: colors.background,
+      borderRadius: 12,
+      marginBottom: spacing.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+      alignItems: "center",
+    },
+    giftIcon: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      justifyContent: "center",
+      alignItems: "center",
+      marginRight: spacing.md,
+    },
+    giftEmoji: {
+      fontSize: 24,
+    },
+    giftDetails: {
+      flex: 1,
+    },
+    giftRecipient: {
+      ...typography.body,
+      fontWeight: "600",
+      color: colors.textPrimary,
+    },
+    giftAmount: {
+      ...typography.caption,
+      color: colors.textPrimary,
+      fontWeight: "700",
+    },
+    giftDate: {
+      ...typography.caption,
+      color: colors.textSecondary,
+      fontSize: 10,
+    },
+    giftStatus: {
+      alignItems: "flex-end",
+      gap: spacing.xs,
+    },
+    statusBadge: {
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 2,
+      borderRadius: 12,
+    },
+    statusPending: {
+      backgroundColor: colors.warning + "20",
+    },
+    statusSuccess: {
+      backgroundColor: colors.success + "20",
+    },
+    statusText: {
+      ...typography.caption,
+      fontSize: 10,
+      fontWeight: "700",
+      textTransform: "uppercase",
+    },
+    statusTextPending: {
+      color: colors.warning,
+    },
+    statusTextSuccess: {
+      color: colors.success,
+    },
+
+    // Direction badges
+    giftMetaContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginTop: 2,
+      marginBottom: 2,
+    },
+    directionBadge: {
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 2,
+      borderRadius: 8,
+      marginLeft: spacing.sm,
+    },
+    sentBadge: {
+      backgroundColor: colors.primary + "15",
+    },
+    receivedBadge: {
+      backgroundColor: colors.success + "15",
+    },
+    directionText: {
+      ...typography.caption,
+      fontSize: 9,
+      fontWeight: "600",
+    },
+    sentText: {
+      color: colors.primary,
+    },
+    receivedText: {
+      color: colors.success,
+    },
+
+    miniActionButton: {
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 4,
+      borderRadius: 12,
+      backgroundColor: colors.primary + "10",
+    },
+    miniActionText: {
+      ...typography.caption,
+      color: colors.primary,
+      fontWeight: "600",
+      fontSize: 10,
     },
   });

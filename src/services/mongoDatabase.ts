@@ -37,17 +37,17 @@ class MongoDatabase {
     }
 
     console.log('🔌 Connecting to MongoDB Atlas...');
-    
+
     try {
       this.client = new MongoClient(uri, {
         serverSelectionTimeoutMS: 5000, // 5 second timeout
         connectTimeoutMS: 10000, // 10 second connection timeout
         socketTimeoutMS: 10000, // Match Vercel free tier limit
       });
-      
+
       await this.client.connect();
       console.log('✅ MongoDB connected successfully');
-      
+
       this.db = this.client.db("metasend");
 
       // Create indexes (fire-and-forget, no await)
@@ -372,6 +372,12 @@ class MongoDatabase {
     return await collection.find({ creatorUserId } as any).sort({ createdAt: -1 }).toArray();
   }
 
+  async getTipJarByUsername(username: string): Promise<any | null> {
+    const collection = await this.getCollection("tipJars");
+    // Case-insensitive search for username
+    return await collection.findOne({ username: { $regex: new RegExp(`^${username}$`, "i") } } as any);
+  }
+
   async updateTipJar(jarId: string, updates: any): Promise<any | null> {
     const collection = await this.getCollection("tipJars");
     const result = await collection.findOneAndUpdate(
@@ -466,7 +472,7 @@ class MongoDatabase {
   async getGiftsByRecipient(recipientEmail: string): Promise<any[]> {
     const collection = await this.getCollection("gifts");
     const normalizedEmail = recipientEmail.toLowerCase().trim();
-    return await collection.find({ 
+    return await collection.find({
       recipientEmail: normalizedEmail,
       status: "pending",
     } as any).sort({ createdAt: -1 }).toArray();

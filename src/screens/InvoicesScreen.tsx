@@ -1,19 +1,129 @@
 import React, { useMemo, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Alert } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Alert, ActivityIndicator, TouchableOpacity, Share, Clipboard } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useSendUserOperation } from "@coinbase/cdp-hooks";
+import * as LocalAuthentication from "expo-local-authentication";
 import { RootStackParamList } from "../navigation/RootNavigator";
 import { useCoinbase } from "../providers/CoinbaseProvider";
 import { useTheme } from "../providers/ThemeProvider";
 import { PrimaryButton } from "../components/PrimaryButton";
+import { invoiceService } from "../services/InvoiceService";
+import { sendUsdcWithPaymaster, TransferIntent } from "../services/transfers";
+import { getUsdcBalance } from "../services/blockchain";
 import type { ColorPalette } from "../utils/theme";
 import { spacing, typography } from "../utils/theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Invoices">;
 
-export const InvoicesScreen: React.FC<Props> = () => {
+export const InvoicesScreen: React.FC<Props> = ({ route, navigation }) => {
   const { profile } = useCoinbase();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const { sendUserOperation } = useSendUserOperation();
+
+  const [showPayModal, setShowPayModal] = useState(false);
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
+
+  const { invoiceId } = route.params || {};
+
+  const { data: deepLinkInvoice, isLoading: isLoadingInvoice } = useQuery({
+    queryKey: ["invoice", invoiceId],
+    queryFn: () => invoiceId ? invoiceService.getInvoice(invoiceId) : Promise.resolve(null),
+    enabled: !!invoiceId,
+  });
+
+  const { data: usdcBalance } = useQuery({
+    queryKey: ["usdcBalance", profile?.walletAddress],
+    queryFn: () => {
+      if (!profile?.walletAddress) throw new Error("No wallet");
+      return getUsdcBalance(profile.walletAddress as `0x${string}`);
+    },
+    enabled: Boolean(profile?.walletAddress),
+  });
+
+  const { data: myInvoices, isLoading: isLoadingInvoices } = useQuery({
+    queryKey: ["my-invoices", profile?.userId],
+    queryFn: () => profile ? invoiceService.getMyInvoices(profile.userId) : Promise.resolve([]),
+    enabled: !!profile,
+  });
+
+  // Show pay modal when invoice is loaded
+  React.useEffect(() => {
+    if (deepLinkInvoice && deepLinkInvoice.status !== 'paid') {
+      setShowPayModal(true);
+    }
+  }, [deepLinkInvoice]);
+
+  const payInvoiceMutation = useMutation({
+    mutationFn: async () => {
+      if (!profile?.walletAddress || !deepLinkInvoice) throw new Error("Not ready");
+
+      const sendUserOpFn = async (calls: any[]) => {
+        return await sendUserOperation({
+          evmSmartAccount: profile.walletAddress as `0x${string}`,
+          network: "base-sepolia",
+          calls,
+          useCdpPaymaster: true,
+        });
+      };
+
+      const intent: TransferIntent = {
+        recipientEmail: deepLinkInvoice.creatorEmail,
+        amountUsdc: parseFloat(deepLinkInvoice.total),
+        memo: `Payment for Invoice #${deepLinkInvoice.invoiceNumber}`,
+        senderUserId: profile.userId,
+        senderEmail: profile.email,
+        senderName: profile.displayName,
+      };
+
+      const result = await sendUsdcWithPaymaster(
+        profile.walletAddress as `0x${string}`,
+        intent,
+        sendUserOpFn
+      );
+
+      if (result.status !== 'sent') {
+        throw new Error("Payment failed or queued");
+      }
+
+      await invoiceService.markInvoicePaid(
+        deepLinkInvoice.invoiceId,
+        result.txHash || "0x"
+      );
+
+      return result;
+    },
+    onSuccess: () => {
+      setShowPayModal(false);
+      Alert.alert("Success", "Invoice paid successfully! 🎉");
+      navigation.setParams({ invoiceId: undefined });
+    },
+    onError: (error) => {
+      Alert.alert("Error", error instanceof Error ? error.message : "Payment failed");
+    },
+  });
+
+  const handlePayInvoice = async () => {
+    setIsAuthenticating(true);
+    try {
+      const hasHardware = await LocalAuthentication.hasHardwareAsync();
+      if (hasHardware) {
+        const result = await LocalAuthentication.authenticateAsync({
+          promptMessage: "Confirm Payment",
+        });
+        if (!result.success) {
+          setIsAuthenticating(false);
+          return;
+        }
+      }
+      payInvoiceMutation.mutate();
+    } catch (error) {
+      Alert.alert("Error", "Authentication failed");
+    } finally {
+      setIsAuthenticating(false);
+    }
+  };
 
   const handleCreateInvoice = () => {
     Alert.alert("Coming Soon", "Invoice creation is under development");
@@ -58,8 +168,119 @@ export const InvoicesScreen: React.FC<Props> = () => {
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>📋 Your Invoices</Text>
-        <Text style={styles.emptyText}>No invoices yet. Create your first one!</Text>
+        {isLoadingInvoices ? (
+          <ActivityIndicator color={colors.primary} />
+        ) : myInvoices && myInvoices.length > 0 ? (
+          myInvoices.map((inv) => (
+            <View key={inv.invoiceId} style={styles.invoiceItem}>
+              <View style={styles.invoiceItemHeader}>
+                <View>
+                  <Text style={styles.invoiceItemNumber}>{inv.invoiceNumber}</Text>
+                  <Text style={styles.invoiceItemDate}>{new Date(inv.issueDate).toLocaleDateString()}</Text>
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={styles.invoiceItemAmount}>${inv.total} {inv.token}</Text>
+                  <View style={[styles.statusBadge, inv.status === 'paid' ? styles.statusSuccess : styles.statusPending]}>
+                    <Text style={[styles.statusText, inv.status === 'paid' ? styles.statusTextSuccess : styles.statusTextPending]}>
+                      {inv.status}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.actionButtons}>
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={() => {
+                    const link = invoiceService.generateInvoiceLink(inv.invoiceId);
+                    Share.share({ message: `Invoice #${inv.invoiceNumber}: ${link}` });
+                  }}
+                >
+                  <Text style={styles.actionButtonText}>Share</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={() => {
+                    Clipboard.setString(invoiceService.generateInvoiceLink(inv.invoiceId));
+                    Alert.alert("Copied", "Link copied to clipboard");
+                  }}
+                >
+                  <Text style={styles.actionButtonText}>Copy Link</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))
+        ) : (
+          <Text style={styles.emptyText}>No invoices yet. Create your first one!</Text>
+        )}
       </View>
+
+      {/* Pay Invoice Modal */}
+      {deepLinkInvoice && (
+        <View style={[styles.modalOverlay, !showPayModal && { display: 'none' }]}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Pay Invoice</Text>
+              <Text style={styles.modalClose} onPress={() => setShowPayModal(false)}>✕</Text>
+            </View>
+
+            <ScrollView contentContainerStyle={styles.modalBody}>
+              <View style={styles.invoiceHeader}>
+                <Text style={styles.invoiceNumber}>{deepLinkInvoice.invoiceNumber}</Text>
+                <Text style={styles.invoiceAmount}>${deepLinkInvoice.total} {deepLinkInvoice.token}</Text>
+                <Text style={styles.invoiceStatus}>{deepLinkInvoice.status}</Text>
+              </View>
+
+              <View style={styles.divider} />
+
+              <Text style={styles.sectionLabel}>From</Text>
+              <Text style={styles.value}>{deepLinkInvoice.creatorName || deepLinkInvoice.creatorEmail}</Text>
+
+              <Text style={styles.sectionLabel}>Due Date</Text>
+              <Text style={styles.value}>{new Date(deepLinkInvoice.dueDate).toLocaleDateString()}</Text>
+
+              <Text style={styles.sectionLabel}>Items</Text>
+              {deepLinkInvoice.items.map((item, index) => (
+                <View key={index} style={styles.itemRow}>
+                  <Text style={styles.itemDescription}>{item.description} x{item.quantity}</Text>
+                  <Text style={styles.itemAmount}>${item.amount}</Text>
+                </View>
+              ))}
+
+              <View style={styles.divider} />
+
+              <View style={styles.row}>
+                <Text style={styles.label}>Subtotal</Text>
+                <Text style={styles.value}>${deepLinkInvoice.subtotal}</Text>
+              </View>
+              {deepLinkInvoice.tax && (
+                <View style={styles.row}>
+                  <Text style={styles.label}>Tax</Text>
+                  <Text style={styles.value}>${deepLinkInvoice.tax}</Text>
+                </View>
+              )}
+              <View style={[styles.row, { marginTop: 10 }]}>
+                <Text style={[styles.label, { fontWeight: 'bold', color: colors.textPrimary }]}>Total</Text>
+                <Text style={[styles.value, { fontWeight: 'bold', fontSize: 18 }]}>${deepLinkInvoice.total}</Text>
+              </View>
+
+              <View style={[styles.divider, { marginVertical: 20 }]} />
+
+              <View style={styles.row}>
+                <Text style={styles.label}>Your Balance</Text>
+                <Text style={styles.value}>{usdcBalance?.toFixed(2) || "0.00"} USDC</Text>
+              </View>
+
+              <PrimaryButton
+                title={payInvoiceMutation.isPending || isAuthenticating ? "Processing..." : "Pay Invoice"}
+                onPress={handlePayInvoice}
+                loading={payInvoiceMutation.isPending || isAuthenticating}
+                disabled={payInvoiceMutation.isPending || isAuthenticating || deepLinkInvoice.status === 'paid'}
+              />
+            </ScrollView>
+          </View>
+        </View>
+      )}
     </ScrollView>
   );
 };
@@ -121,5 +342,183 @@ const createStyles = (colors: ColorPalette) =>
       ...typography.body,
       color: colors.textSecondary,
       textAlign: "center",
+    },
+
+    // Modal Styles
+    modalOverlay: {
+      position: 'absolute',
+      top: 0,
+      bottom: 0,
+      left: 0,
+      right: 0,
+      backgroundColor: "rgba(0, 0, 0, 0.5)",
+      justifyContent: "flex-end",
+      zIndex: 1000,
+    },
+    modalContent: {
+      backgroundColor: colors.cardBackground,
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      maxHeight: "90%",
+      height: "80%",
+    },
+    modalHeader: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.lg,
+      paddingBottom: spacing.md,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    modalTitle: {
+      ...typography.subtitle,
+      fontSize: 20,
+      fontWeight: "700",
+      color: colors.textPrimary,
+    },
+    modalClose: {
+      fontSize: 24,
+      color: colors.textSecondary,
+      padding: spacing.xs,
+    },
+    modalBody: {
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.lg,
+    },
+    invoiceHeader: {
+      alignItems: 'center',
+      marginBottom: spacing.lg,
+    },
+    invoiceNumber: {
+      ...typography.caption,
+      color: colors.textSecondary,
+      marginBottom: spacing.xs,
+    },
+    invoiceAmount: {
+      fontSize: 32,
+      fontWeight: 'bold',
+      color: colors.primary,
+      marginBottom: spacing.xs,
+    },
+    invoiceStatus: {
+      ...typography.caption,
+      fontWeight: 'bold',
+      textTransform: 'uppercase',
+      color: colors.textSecondary,
+      backgroundColor: colors.background,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 4,
+      borderRadius: 4,
+    },
+    divider: {
+      height: 1,
+      backgroundColor: colors.border,
+      marginVertical: spacing.md,
+    },
+    sectionLabel: {
+      ...typography.caption,
+      color: colors.textSecondary,
+      marginBottom: 4,
+      marginTop: spacing.md,
+    },
+    value: {
+      ...typography.body,
+      color: colors.textPrimary,
+      fontWeight: '500',
+    },
+    itemRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginBottom: spacing.xs,
+    },
+    itemDescription: {
+      ...typography.body,
+      color: colors.textPrimary,
+      flex: 1,
+    },
+    itemAmount: {
+      ...typography.body,
+      color: colors.textPrimary,
+      fontWeight: '600',
+    },
+    row: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginBottom: spacing.xs,
+    },
+    label: {
+      ...typography.body,
+      color: colors.textSecondary,
+    },
+
+    // Invoice Item Styles
+    invoiceItem: {
+      padding: spacing.md,
+      backgroundColor: colors.background,
+      borderRadius: 12,
+      marginBottom: spacing.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    invoiceItemHeader: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      marginBottom: spacing.md,
+    },
+    invoiceItemNumber: {
+      ...typography.body,
+      fontWeight: "600",
+      color: colors.textPrimary,
+      marginBottom: 2,
+    },
+    invoiceItemDate: {
+      ...typography.caption,
+      color: colors.textSecondary,
+    },
+    invoiceItemAmount: {
+      ...typography.body,
+      fontWeight: "700",
+      color: colors.textPrimary,
+      marginBottom: 2,
+    },
+    statusBadge: {
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 2,
+      borderRadius: 12,
+    },
+    statusPending: {
+      backgroundColor: colors.warning + "20",
+    },
+    statusSuccess: {
+      backgroundColor: colors.success + "20",
+    },
+    statusText: {
+      ...typography.caption,
+      fontSize: 10,
+      fontWeight: "700",
+      textTransform: "uppercase",
+    },
+    statusTextPending: {
+      color: colors.warning,
+    },
+    statusTextSuccess: {
+      color: colors.success,
+    },
+    actionButtons: {
+      flexDirection: "row",
+      gap: spacing.sm,
+    },
+    actionButton: {
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.xs,
+      borderRadius: 16,
+      backgroundColor: colors.primary + "10",
+    },
+    actionButtonText: {
+      ...typography.caption,
+      color: colors.primary,
+      fontWeight: "600",
     },
   });

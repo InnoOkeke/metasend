@@ -56,7 +56,12 @@ const router = Router();
 // GET tip jars or tips
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const { jarId, creatorUserId, tipperUserId, type } = req.query;
+    const { jarId, creatorUserId, tipperUserId, username, type } = req.query;
+    if (username && typeof username === 'string') {
+      const jar = await mongoDb.getTipJarByUsername(username);
+      if (!jar) return res.status(404).json({ error: 'Tip jar not found' });
+      return res.status(200).json(jar);
+    }
     if (jarId && typeof jarId === 'string' && type !== 'tips') {
       const jar = await mongoDb.getTipJarById(jarId);
       if (!jar) return res.status(404).json({ error: 'Tip jar not found' });

@@ -51,10 +51,36 @@ async function handleClaim(transferId: string, res: Response) {
   }
 
   try {
-    const transfer = await mongoDb.getPendingTransferById(transferId);
+    let transfer: any = await mongoDb.getPendingTransferById(transferId);
 
+    // If no transfer found, check if it's a gift ID
     if (!transfer) {
-      return res.status(404).send(getErrorPage("Transfer not found"));
+      const gift = await mongoDb.getGiftById(transferId);
+      if (gift) {
+        // Treat gift as a transfer for claim UI
+        if (gift.status === "claimed") {
+          return res.status(200).send(getInfoPage("Gift already claimed", "Looks like this gift has already been claimed. 🎉"));
+        }
+        if (gift.status === "cancelled") {
+          return res.status(400).send(getErrorPage("This gift was cancelled by the sender"));
+        }
+        if (gift.status === "expired") {
+          return res.status(400).send(getErrorPage("This gift has expired"));
+        }
+        // Map gift to transfer format for claim page (typed as 'any' for flexibility)
+        transfer = {
+          amount: gift.amount,
+          token: gift.token,
+          senderName: gift.senderName,
+          senderEmail: gift.senderEmail,
+          recipientEmail: gift.recipientEmail,
+          status: gift.status,
+          expiresAt: gift.expiresAt,
+          message: gift.message,
+        };
+      } else {
+        return res.status(404).send(getErrorPage("Transfer not found"));
+      }
     }
 
     if (transfer.status !== "pending") {
@@ -126,7 +152,8 @@ async function handleGift(giftId: string, res: Response) {
     }
 
     const theme = GIFT_THEMES[gift.theme] || GIFT_THEMES.custom;
-    const deepLink = `metasend://gift/${giftId}`;
+    // Use claim deep link so the app opens ClaimScreen directly
+    const deepLink = `metasend://claim/${giftId}`;
     return res.status(200).send(getGiftPage(gift, deepLink, theme));
   } catch (error) {
     console.error("Gift error:", error);
@@ -207,12 +234,25 @@ function getClaimPage(transfer: any, deepLink: string) {
           text-decoration: none;
           font-weight: 600;
           font-size: 18px;
-          margin: 10px 0;
+          margin: 10px 5px;
+          transition: transform 0.2s;
+          width: 100%;
+          max-width: 350px;
         }
+        .button:hover { transform: translateY(-2px); }
+        .button.store {
+          background: #000;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+        }
+        .button.store:hover { background: #333; }
+        .hidden { display: none !important; }
         .info { margin-top: 30px; padding-top: 30px; border-top: 1px solid #e2e8f0; }
         .steps { text-align: left; color: #4a5568; line-height: 1.8; }
         .steps li { margin-bottom: 10px; }
-        .expires { margin-top: 20px; color: #e53e3e; font-size: 14px; }
+        .expires { margin-top: 20px; color: #e53e3e; font-size: 14px; font-weight: 600; }
         .footer { margin-top: 30px; color: #718096; font-size: 14px; }
       </style>
     </head>
@@ -223,18 +263,70 @@ function getClaimPage(transfer: any, deepLink: string) {
         <div class="amount">${transfer.amount} ${transfer.token}</div>
         <div class="sender">from ${transfer.senderName || transfer.senderEmail}</div>
         ${transfer.message ? `<div class="message">"${transfer.message}"</div>` : ''}
-        <a href="${deepLink}" class="button">Open MetaSend App</a>
+        
+        <a href="metasend://claim/${transfer.transferId}" class="button" id="openAppBtn">
+          Open MetaSend App
+        </a>
+        <a href="https://apps.apple.com/app/metasend" class="button store hidden" id="appStoreBtn">
+          <span>📱</span>
+          <span>Download on App Store</span>
+        </a>
+        <a href="https://play.google.com/store/apps/details?id=com.kellonapp.metasend" class="button store hidden" id="playStoreBtn">
+          <span>🤖</span>
+          <span>Get it on Google Play</span>
+        </a>
+
         <div class="info">
           <div style="font-weight: 600; margin-bottom: 15px;">How to claim:</div>
           <ol class="steps">
-            <li>Download MetaSend if you don't have it</li>
-            <li>Sign in with ${transfer.recipientEmail}</li>
-            <li>Funds will be automatically claimed</li>
+            <li>Download MetaSend if you don't have it yet</li>
+            <li>Sign in with <strong>${transfer.recipientEmail}</strong></li>
+            <li>Your funds will appear automatically in your wallet</li>
           </ol>
         </div>
         <div class="expires">⏰ Expires: ${new Date(transfer.expiresAt).toLocaleDateString()}</div>
         <div class="footer">Powered by <strong>MetaSend</strong></div>
       </div>
+
+      <script>
+        // Detect device
+        const ua = navigator.userAgent || navigator.vendor || window.opera;
+        const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+        const isAndroid = /android/i.test(ua);
+        
+        const openBtn = document.getElementById('openAppBtn');
+        const appStoreBtn = document.getElementById('appStoreBtn');
+        const playStoreBtn = document.getElementById('playStoreBtn');
+
+        // Show appropriate store button
+        if (isIOS) {
+          appStoreBtn.classList.remove('hidden');
+        } else if (isAndroid) {
+          playStoreBtn.classList.remove('hidden');
+        }
+
+        // Try to open app with fallback
+        openBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          const deepLink = this.href;
+          
+          // Try to open app
+          window.location.href = deepLink;
+          
+          // Fallback if app doesn't open
+          setTimeout(function() {
+            if (document.hidden) return; // App opened successfully
+            
+            if (isIOS && confirm('MetaSend app not installed. Download from App Store?')) {
+              window.location.href = appStoreBtn.href;
+            } else if (isAndroid && confirm('MetaSend app not installed. Download from Google Play?')) {
+              window.location.href = playStoreBtn.href;
+            } else if (!isIOS && !isAndroid) {
+              alert('Please download MetaSend from your device\\'s app store to claim your funds.');
+            }
+          }, 2000);
+        });
+      </script>
     </body>
     </html>
   `;
@@ -288,8 +380,21 @@ function getPaymentPage(request: any, deepLink: string) {
           text-decoration: none;
           font-weight: 600;
           font-size: 18px;
-          margin: 20px 0;
+          margin: 10px 5px;
+          transition: transform 0.2s;
+          width: 100%;
+          max-width: 350px;
         }
+        .button:hover { transform: translateY(-2px); }
+        .button.store {
+          background: #000;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+        }
+        .button.store:hover { background: #333; }
+        .hidden { display: none !important; }
         .footer { margin-top: 30px; color: #718096; font-size: 14px; }
       </style>
     </head>
@@ -300,9 +405,59 @@ function getPaymentPage(request: any, deepLink: string) {
         <div class="amount">${request.amount} ${request.token}</div>
         <div class="from">from ${request.creatorName || request.creatorEmail}</div>
         <div class="description"><strong>Description:</strong><br>${request.description}</div>
-        <a href="${deepLink}" class="button">Pay with MetaSend</a>
+        
+        <a href="${deepLink}" class="button" id="openAppBtn">Pay with MetaSend</a>
+        <a href="https://apps.apple.com/app/metasend" class="button store hidden" id="appStoreBtn">
+          <span>📱</span>
+          <span>Download on App Store</span>
+        </a>
+        <a href="https://play.google.com/store/apps/details?id=com.kellonapp.metasend" class="button store hidden" id="playStoreBtn">
+          <span>🤖</span>
+          <span>Get it on Google Play</span>
+        </a>
+
         <div class="footer">Powered by <strong>MetaSend</strong></div>
       </div>
+
+      <script>
+        // Detect device
+        const ua = navigator.userAgent || navigator.vendor || window.opera;
+        const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+        const isAndroid = /android/i.test(ua);
+        
+        const openBtn = document.getElementById('openAppBtn');
+        const appStoreBtn = document.getElementById('appStoreBtn');
+        const playStoreBtn = document.getElementById('playStoreBtn');
+
+        // Show appropriate store button
+        if (isIOS) {
+          appStoreBtn.classList.remove('hidden');
+        } else if (isAndroid) {
+          playStoreBtn.classList.remove('hidden');
+        }
+
+        // Try to open app with fallback
+        openBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          const deepLink = this.href;
+          
+          // Try to open app
+          window.location.href = deepLink;
+          
+          // Fallback if app doesn't open
+          setTimeout(function() {
+            if (document.hidden) return; // App opened successfully
+            
+            if (isIOS && confirm('MetaSend app not installed. Download from App Store?')) {
+              window.location.href = appStoreBtn.href;
+            } else if (isAndroid && confirm('MetaSend app not installed. Download from Google Play?')) {
+              window.location.href = playStoreBtn.href;
+            } else if (!isIOS && !isAndroid) {
+              alert('Please download MetaSend from your device\\'s app store to pay.');
+            }
+          }, 2000);
+        });
+      </script>
     </body>
     </html>
   `;
@@ -397,11 +552,21 @@ function getTipPage(jar: any, deepLink: string) {
           text-decoration: none;
           font-weight: 600;
           font-size: 18px;
-          margin: 20px 0;
+          margin: 10px 5px;
           width: 100%;
+          max-width: 350px;
           transition: transform 0.2s;
         }
         .button:hover { transform: translateY(-2px); }
+        .button.store {
+          background: #000;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+        }
+        .button.store:hover { background: #333; }
+        .hidden { display: none !important; }
         .footer { margin-top: 30px; color: #9ca3af; font-size: 14px; }
         
         .qr-placeholder {
@@ -440,7 +605,15 @@ function getTipPage(jar: any, deepLink: string) {
           <div><div class="stat-value">$${jar.totalTipsReceived.toFixed(2)}</div><div class="stat-label">Received</div></div>
         </div>
 
-        <a href="${deepLink}" class="button">Send a Tip 🎁</a>
+        <a href="${deepLink}" class="button" id="openAppBtn">Send a Tip 🎁</a>
+        <a href="https://apps.apple.com/app/metasend" class="button store hidden" id="appStoreBtn">
+          <span>📱</span>
+          <span>Download on App Store</span>
+        </a>
+        <a href="https://play.google.com/store/apps/details?id=com.kellonapp.metasend" class="button store hidden" id="playStoreBtn">
+          <span>🤖</span>
+          <span>Get it on Google Play</span>
+        </a>
         
         <div class="qr-placeholder">
           Open in MetaSend App to pay with Crypto, Card, or Bank Transfer
@@ -448,6 +621,46 @@ function getTipPage(jar: any, deepLink: string) {
 
         <div class="footer">Powered by <strong>MetaSend</strong></div>
       </div>
+
+      <script>
+        // Detect device
+        const ua = navigator.userAgent || navigator.vendor || window.opera;
+        const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+        const isAndroid = /android/i.test(ua);
+        
+        const openBtn = document.getElementById('openAppBtn');
+        const appStoreBtn = document.getElementById('appStoreBtn');
+        const playStoreBtn = document.getElementById('playStoreBtn');
+
+        // Show appropriate store button
+        if (isIOS) {
+          appStoreBtn.classList.remove('hidden');
+        } else if (isAndroid) {
+          playStoreBtn.classList.remove('hidden');
+        }
+
+        // Try to open app with fallback
+        openBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          const deepLink = this.href;
+          
+          // Try to open app
+          window.location.href = deepLink;
+          
+          // Fallback if app doesn't open
+          setTimeout(function() {
+            if (document.hidden) return; // App opened successfully
+            
+            if (isIOS && confirm('MetaSend app not installed. Download from App Store?')) {
+              window.location.href = appStoreBtn.href;
+            } else if (isAndroid && confirm('MetaSend app not installed. Download from Google Play?')) {
+              window.location.href = playStoreBtn.href;
+            } else if (!isIOS && !isAndroid) {
+              alert('Please download MetaSend from your device\\'s app store to send a tip.');
+            }
+          }, 2000);
+        });
+      </script>
     </body>
     </html>
   `;
@@ -508,8 +721,21 @@ function getGiftPage(
           text-decoration: none;
           font-weight: 600;
           font-size: 18px;
-          margin: 20px 0;
+          margin: 10px 5px;
+          transition: transform 0.2s;
+          width: 100%;
+          max-width: 350px;
         }
+        .button:hover { transform: translateY(-2px); }
+        .button.store {
+          background: #000;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+        }
+        .button.store:hover { background: #333; }
+        .hidden { display: none !important; }
         .footer { margin-top: 20px; color: #718096; font-size: 14px; }
         .note { margin-top: 10px; font-size: 13px; color: #4a5568; }
       </style>
@@ -521,10 +747,60 @@ function getGiftPage(
         <div class="amount">${gift.amount} ${gift.token}</div>
         <div class="sender">from ${gift.senderName || gift.senderEmail}</div>
         ${gift.message ? `<div class="message">"${gift.message}"</div>` : ""}
-        <a href="${deepLink}" class="button">Open MetaSend App</a>
-        <p class="note">Need the app? Search "MetaSend" in your app store.</p>
+        
+        <a href="${deepLink}" class="button" id="openAppBtn">Open MetaSend App</a>
+        <a href="https://apps.apple.com/app/metasend" class="button store hidden" id="appStoreBtn">
+          <span>📱</span>
+          <span>Download on App Store</span>
+        </a>
+        <a href="https://play.google.com/store/apps/details?id=com.kellonapp.metasend" class="button store hidden" id="playStoreBtn">
+          <span>🤖</span>
+          <span>Get it on Google Play</span>
+        </a>
+
+        <p class="note">Need the app? Download it to claim your gift.</p>
         <div class="footer">Powered by <strong>MetaSend</strong></div>
       </div>
+
+      <script>
+        // Detect device
+        const ua = navigator.userAgent || navigator.vendor || window.opera;
+        const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+        const isAndroid = /android/i.test(ua);
+        
+        const openBtn = document.getElementById('openAppBtn');
+        const appStoreBtn = document.getElementById('appStoreBtn');
+        const playStoreBtn = document.getElementById('playStoreBtn');
+
+        // Show appropriate store button
+        if (isIOS) {
+          appStoreBtn.classList.remove('hidden');
+        } else if (isAndroid) {
+          playStoreBtn.classList.remove('hidden');
+        }
+
+        // Try to open app with fallback
+        openBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          const deepLink = this.href;
+          
+          // Try to open app
+          window.location.href = deepLink;
+          
+          // Fallback if app doesn't open
+          setTimeout(function() {
+            if (document.hidden) return; // App opened successfully
+            
+            if (isIOS && confirm('MetaSend app not installed. Download from App Store?')) {
+              window.location.href = appStoreBtn.href;
+            } else if (isAndroid && confirm('MetaSend app not installed. Download from Google Play?')) {
+              window.location.href = playStoreBtn.href;
+            } else if (!isIOS && !isAndroid) {
+              alert('Please download MetaSend from your device\\'s app store to claim your gift.');
+            }
+          }, 2000);
+        });
+      </script>
     </body>
     </html>
   `;

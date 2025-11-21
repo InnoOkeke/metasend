@@ -27,10 +27,10 @@ export type RootStackParamList = {
   InternationalTransfer: undefined;
   OffRamp: undefined;
   TransactionHistory: undefined;
-  Tipping: undefined;
-  PaymentRequests: undefined;
-  Invoices: undefined;
-  Gifts: undefined;
+  Tipping: { tipJarId?: string } | undefined;
+  PaymentRequests: { requestId?: string } | undefined;
+  Invoices: { invoiceId?: string } | undefined;
+  Gifts: { giftId?: string } | undefined;
   Claim: { transferId: string };
 };
 
@@ -175,7 +175,7 @@ export const RootNavigator: React.FC = () => {
   }
 
   return (
-    <NavigationContainer 
+    <NavigationContainer
       theme={navigationTheme}
       linking={{
         prefixes: ['metasend://', 'https://metasend.vercel.app'],
@@ -188,10 +188,10 @@ export const RootNavigator: React.FC = () => {
             Claim: 'claim/:transferId',
             OffRamp: 'offramp',
             TransactionHistory: 'history',
-            Tipping: 'tipping',
-            PaymentRequests: 'payment-requests',
-            Invoices: 'invoices',
-            Gifts: 'gifts',
+            Tipping: 'tip/:tipJarId',
+            PaymentRequests: 'pay/:requestId',
+            Invoices: 'invoice/:invoiceId',
+            Gifts: 'gift/:giftId',
           },
         },
       }}
@@ -216,14 +216,13 @@ export const RootNavigator: React.FC = () => {
       ) : (
         <Stack.Navigator screenOptions={{ ...screenOptions, headerShown: false }}>
           <Stack.Screen name="SignIn" component={SignInScreen} />
-          <Stack.Screen 
-            name="Claim" 
-            component={ClaimScreen} 
-            options={{ headerShown: true, title: "Claim Transfer" }} 
+          <Stack.Screen
+            name="Claim"
+            component={ClaimScreen}
+            options={{ headerShown: true, title: "Claim Transfer" }}
           />
         </Stack.Navigator>
       )}
     </NavigationContainer>
   );
 };
-

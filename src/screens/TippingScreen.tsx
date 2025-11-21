@@ -1,14 +1,18 @@
-import React, { useMemo, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Pressable, Alert, Share, Clipboard, Platform } from "react-native";
-import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
+import React, { useMemo, useState, useEffect } from "react";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Alert, Share, Clipboard, ActivityIndicator } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { useSendUserOperation } from "@coinbase/cdp-hooks";
+import * as LocalAuthentication from "expo-local-authentication";
 import { RootStackParamList } from "../navigation/RootNavigator";
 import { useCoinbase } from "../providers/CoinbaseProvider";
 import { useTheme } from "../providers/ThemeProvider";
 import { PrimaryButton } from "../components/PrimaryButton";
 import { TextField } from "../components/TextField";
 import { tippingService, CreateTipJarInput } from "../services/TippingService";
+import { sendUsdcWithPaymaster, TransferIntent } from "../services/transfers";
+import { getUsdcBalance } from "../services/blockchain";
 import type { ColorPalette } from "../utils/theme";
 import { spacing, typography } from "../utils/theme";
 
@@ -16,12 +20,19 @@ type Props = NativeStackScreenProps<RootStackParamList, "Tipping">;
 
 const SUGGESTED_TIPS = [1, 5, 10, 25, 50, 100];
 
-export const TippingScreen: React.FC<Props> = () => {
+export const TippingScreen: React.FC<Props> = ({ route, navigation }) => {
   const { profile } = useCoinbase();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
+  const { sendUserOperation } = useSendUserOperation();
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showTipModal, setShowTipModal] = useState(false);
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [tipAmount, setTipAmount] = useState("");
+  const [tipMessage, setTipMessage] = useState("");
+  const [tipJarError, setTipJarError] = useState<string | null>(null);
+
   const [form, setForm] = useState({
     title: "",
     description: "",
@@ -35,16 +46,64 @@ export const TippingScreen: React.FC<Props> = () => {
     selectedAmounts: [1, 5, 10, 25] as number[],
   });
 
-  const { data: tipJars, isLoading: isLoadingJars, refetch: refetchJars } = useQuery({
+  // Extract tipJarId from deep link params
+  const { tipJarId } = route.params ?? {};
+
+  // Fetch tip jar when deep link is present
+  const {
+    data: deepLinkJar,
+    isLoading: isLoadingDeepLinkJar,
+    error: deepLinkError,
+  } = useQuery({
+    queryKey: ["tipJar", tipJarId],
+    queryFn: async () => {
+      if (!tipJarId) return null;
+      return await tippingService.getTipJar(tipJarId);
+    },
+    enabled: !!tipJarId,
+    retry: false,
+  });
+
+  // Show tip modal when a jar is loaded via deep link
+  useEffect(() => {
+    if (deepLinkJar) {
+      setShowTipModal(true);
+    }
+  }, [deepLinkJar]);
+
+  // Handle errors for deep link fetching
+  useEffect(() => {
+    if (deepLinkError) {
+      setTipJarError("Failed to load tip jar.");
+    } else if (!isLoadingDeepLinkJar && tipJarId && !deepLinkJar) {
+      setTipJarError("Tip jar not found for this ID.");
+    } else {
+      setTipJarError(null);
+    }
+  }, [deepLinkError, deepLinkJar, isLoadingDeepLinkJar, tipJarId]);
+
+  // Load user's tip jars for the create list
+  const { data: tipJars = [], isLoading: isLoadingJars, refetch: refetchJars } = useQuery({
     queryKey: ["my-tip-jars", profile?.userId],
-    queryFn: () => profile ? tippingService.getMyTipJars(profile.userId) : Promise.resolve([]),
+    queryFn: () =>
+      profile ? tippingService.getMyTipJars(profile.userId) : Promise.resolve([]),
     enabled: !!profile,
+  });
+
+  // Load USDC balance (optional)
+  useQuery({
+    queryKey: ["usdcBalance", profile?.walletAddress],
+    queryFn: async () => {
+      if (!profile?.walletAddress) return null;
+      return await getUsdcBalance(profile.walletAddress as `0x${string}`);
+    },
+    enabled: !!profile?.walletAddress,
   });
 
   const toggleAmount = (amount: number) => {
     const selected = form.selectedAmounts;
     if (selected.includes(amount)) {
-      setForm({ ...form, selectedAmounts: selected.filter(a => a !== amount) });
+      setForm({ ...form, selectedAmounts: selected.filter((a) => a !== amount) });
     } else if (selected.length < 6) {
       setForm({ ...form, selectedAmounts: [...selected, amount].sort((a, b) => a - b) });
     }
@@ -53,7 +112,6 @@ export const TippingScreen: React.FC<Props> = () => {
   const createJarMutation = useMutation({
     mutationFn: async (input: CreateTipJarInput) => {
       if (!profile) throw new Error("Not signed in");
-
       return await tippingService.createTipJar(
         profile.userId,
         profile.email,
@@ -62,18 +120,15 @@ export const TippingScreen: React.FC<Props> = () => {
         input
       );
     },
-    onSuccess: async (jar) => {
+    onSuccess: (jar) => {
       const link = tippingService.generateTipJarLink(jar.jarId);
+      // Refresh list
       refetchJars();
-
       Alert.alert(
         "Tip Jar Created! 🎁",
         `Share your tip jar:\n${link}`,
         [
-          {
-            text: "Share Link",
-            onPress: () => Share.share({ message: `Support me: ${link}` }),
-          },
+          { text: "Share Link", onPress: () => Share.share({ message: `Support me: ${link}` }) },
           {
             text: "Done",
             onPress: () => {
@@ -83,7 +138,7 @@ export const TippingScreen: React.FC<Props> = () => {
                 description: "",
                 username: "",
                 socialLinks: { twitter: "", farcaster: "", instagram: "", website: "" },
-                selectedAmounts: [1, 5, 10, 25]
+                selectedAmounts: [1, 5, 10, 25],
               });
             },
           },
@@ -95,12 +150,94 @@ export const TippingScreen: React.FC<Props> = () => {
     },
   });
 
+  const sendTipMutation = useMutation({
+    mutationFn: async () => {
+      if (!profile?.walletAddress || !deepLinkJar) throw new Error("Not ready");
+      const sendUserOpFn = async (calls: any[]) => {
+        return await sendUserOperation({
+          evmSmartAccount: profile.walletAddress as `0x${string}`,
+          network: "base-sepolia",
+          calls,
+          useCdpPaymaster: true,
+        });
+      };
+
+      const intent: TransferIntent = {
+        recipientEmail: deepLinkJar.creatorEmail,
+        amountUsdc: parseFloat(tipAmount),
+        memo: tipMessage || `Tip for ${deepLinkJar.title}`,
+        senderUserId: profile.userId,
+        senderEmail: profile.email,
+        senderName: profile.displayName,
+      };
+
+      const result = await sendUsdcWithPaymaster(
+        profile.walletAddress as `0x${string}`,
+        intent,
+        sendUserOpFn
+      );
+
+      if (result.status !== "sent") {
+        throw new Error("Tip transfer failed or queued");
+      }
+
+      await tippingService.sendTip(
+        profile.userId,
+        profile.email,
+        profile.displayName || undefined,
+        {
+          jarId: deepLinkJar.jarId,
+          amount: tipAmount,
+          token: "USDC",
+          chain: "base",
+          message: tipMessage,
+          isAnonymous: false,
+        },
+        result.txHash || "0x"
+      );
+
+      return result;
+    },
+    onSuccess: () => {
+      setShowTipModal(false);
+      Alert.alert("Success", "Tip sent successfully! 🚀");
+      setTipAmount("");
+      setTipMessage("");
+      navigation.setParams({ tipJarId: undefined });
+    },
+    onError: (error) => {
+      Alert.alert("Error", error instanceof Error ? error.message : "Failed to send tip");
+    },
+  });
+
+  const handleSendTip = async () => {
+    if (!tipAmount || isNaN(parseFloat(tipAmount))) {
+      Alert.alert("Invalid Amount", "Please enter a valid tip amount");
+      return;
+    }
+    setIsAuthenticating(true);
+    try {
+      const hasHardware = await LocalAuthentication.hasHardwareAsync();
+      if (hasHardware) {
+        const result = await LocalAuthentication.authenticateAsync({ promptMessage: "Confirm Tip" });
+        if (!result.success) {
+          setIsAuthenticating(false);
+          return;
+        }
+      }
+      sendTipMutation.mutate();
+    } catch (e) {
+      Alert.alert("Error", "Authentication failed");
+    } finally {
+      setIsAuthenticating(false);
+    }
+  };
+
   const handleCreateJar = () => {
     if (!form.title || form.selectedAmounts.length === 0) {
       Alert.alert("Required Fields", "Please provide a title and select at least one tip amount");
       return;
     }
-
     createJarMutation.mutate({
       title: form.title,
       description: form.description || undefined,
@@ -132,11 +269,8 @@ export const TippingScreen: React.FC<Props> = () => {
       <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
           <Text style={styles.headerTitle}>💸 Micro-Tipping</Text>
-          <Text style={styles.headerSubtitle}>
-            Receive tips from supporters with one-tap payments
-          </Text>
+          <Text style={styles.headerSubtitle}>Receive tips from supporters with one-tap payments</Text>
         </View>
-
         <View style={styles.card}>
           <Text style={styles.cardTitle}>🎁 Create Your Tip Jar</Text>
           <View style={styles.infoList}>
@@ -145,13 +279,8 @@ export const TippingScreen: React.FC<Props> = () => {
             <Text style={styles.infoItem}>• Instant notifications for each tip</Text>
             <Text style={styles.infoItem}>• No processing fees with Coinbase Paymaster</Text>
           </View>
-
-          <PrimaryButton
-            title="Create Tip Jar"
-            onPress={() => setShowCreateModal(true)}
-          />
+          <PrimaryButton title="Create Tip Jar" onPress={() => setShowCreateModal(true)} />
         </View>
-
         <View style={styles.card}>
           <Text style={styles.cardTitle}>📊 Your Tip Jars</Text>
           {isLoadingJars ? (
@@ -161,13 +290,11 @@ export const TippingScreen: React.FC<Props> = () => {
               <View key={jar.jarId} style={styles.jarItem}>
                 <View style={styles.jarHeader}>
                   <Text style={styles.jarTitle}>{jar.title}</Text>
-                  <View style={[styles.statusBadge, jar.status === 'active' ? styles.statusActive : styles.statusInactive]}>
-                    <Text style={[styles.statusText, jar.status === 'active' ? styles.statusTextActive : styles.statusTextInactive]}>{jar.status}</Text>
+                  <View style={[styles.statusBadge, jar.status === "active" ? styles.statusActive : styles.statusInactive]}>
+                    <Text style={[styles.statusText, jar.status === "active" ? styles.statusTextActive : styles.statusTextInactive]}>{jar.status}</Text>
                   </View>
                 </View>
-                <Text style={styles.jarStats}>
-                  {jar.tipCount} tips • ${jar.totalTipsReceived.toFixed(2)} received
-                </Text>
+                <Text style={styles.jarStats}>{jar.tipCount} tips • ${jar.totalTipsReceived.toFixed(2)} received</Text>
                 <View style={styles.jarActions}>
                   <TouchableOpacity
                     style={styles.actionButton}
@@ -197,109 +324,51 @@ export const TippingScreen: React.FC<Props> = () => {
       </ScrollView>
 
       {/* Create Jar Modal */}
-      <Modal
-        visible={showCreateModal}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowCreateModal(false)}
-        statusBarTranslucent
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Create Tip Jar</Text>
-              <Pressable onPress={() => setShowCreateModal(false)} style={styles.modalClose}>
-                <Text style={styles.modalCloseText}>✕</Text>
-              </Pressable>
-            </View>
-
-            <KeyboardAwareScrollView
-              contentContainerStyle={[styles.modalBody, { flexGrow: 1 }]}
-              keyboardShouldPersistTaps="handled"
-              enableAutomaticScroll
-              enableOnAndroid
-              extraScrollHeight={Platform.OS === 'ios' ? 40 : 120}
-            >
-              <TextField
-                label="Title *"
-                value={form.title}
-                onChangeText={(value) => setForm({ ...form, title: value })}
-                placeholder="Support My Content"
-              />
-
-              <TextField
-                label="Description (Optional)"
-                value={form.description}
-                onChangeText={(value) => setForm({ ...form, description: value })}
-                placeholder="Tips help me create more content!"
-                multiline
-                numberOfLines={3}
-              />
-
-              <Text style={styles.sectionLabel}>Social Links (Optional)</Text>
-              <TextField
-                label="Twitter / X"
-                value={form.socialLinks.twitter}
-                onChangeText={(value) => setForm({ ...form, socialLinks: { ...form.socialLinks, twitter: value } })}
-                placeholder="https://x.com/username"
-                autoCapitalize="none"
-              />
-              <TextField
-                label="Farcaster"
-                value={form.socialLinks.farcaster}
-                onChangeText={(value) => setForm({ ...form, socialLinks: { ...form.socialLinks, farcaster: value } })}
-                placeholder="https://warpcast.com/username"
-                autoCapitalize="none"
-              />
-              <TextField
-                label="Instagram"
-                value={form.socialLinks.instagram}
-                onChangeText={(value) => setForm({ ...form, socialLinks: { ...form.socialLinks, instagram: value } })}
-                placeholder="https://instagram.com/username"
-                autoCapitalize="none"
-              />
-              <TextField
-                label="Website"
-                value={form.socialLinks.website}
-                onChangeText={(value) => setForm({ ...form, socialLinks: { ...form.socialLinks, website: value } })}
-                placeholder="https://mysite.com"
-                autoCapitalize="none"
-              />
-
-              <Text style={styles.sectionLabel}>Suggested Tip Amounts (USDC)</Text>
-              <Text style={styles.sectionHint}>Select 1-6 amounts</Text>
-
-              <View style={styles.amountGrid}>
-                {SUGGESTED_TIPS.map((amount) => (
-                  <TouchableOpacity
-                    key={amount}
-                    style={[
-                      styles.amountChip,
-                      form.selectedAmounts.includes(amount) && styles.amountChipSelected,
-                    ]}
-                    onPress={() => toggleAmount(amount)}
-                  >
-                    <Text
-                      style={[
-                        styles.amountChipText,
-                        form.selectedAmounts.includes(amount) && styles.amountChipTextSelected,
-                      ]}
-                    >
-                      ${amount}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <PrimaryButton
-                title={createJarMutation.isPending ? "Creating..." : "Create Tip Jar"}
-                onPress={handleCreateJar}
-                loading={createJarMutation.isPending}
-                disabled={createJarMutation.isPending}
-              />
-            </KeyboardAwareScrollView>
+      <Modal visible={showCreateModal} animationType="slide" transparent={true} onRequestClose={() => setShowCreateModal(false)} statusBarTranslucent>
+        <KeyboardAwareScrollView contentContainerStyle={styles.modalContent}>
+          <Text style={styles.modalTitle}>Create Tip Jar</Text>
+          <TextField label="Title" value={form.title} onChangeText={(t) => setForm({ ...form, title: t })} />
+          <TextField label="Description" value={form.description} onChangeText={(t) => setForm({ ...form, description: t })} />
+          <Text style={styles.sectionHeader}>Suggested Amounts</Text>
+          <View style={styles.amountGrid}>
+            {SUGGESTED_TIPS.map((amt) => (
+              <TouchableOpacity
+                key={amt}
+                style={[styles.amountChip, form.selectedAmounts.includes(amt) && styles.amountChipSelected]}
+                onPress={() => toggleAmount(amt)}
+              >
+                <Text style={[styles.amountChipText, form.selectedAmounts.includes(amt) && styles.amountChipTextSelected]}>${amt}</Text>
+              </TouchableOpacity>
+            ))}
           </View>
-        </View>
+          <PrimaryButton title="Create" onPress={handleCreateJar} />
+          <TouchableOpacity style={styles.modalClose} onPress={() => setShowCreateModal(false)}>
+            <Text style={styles.modalCloseText}>Cancel</Text>
+          </TouchableOpacity>
+        </KeyboardAwareScrollView>
+      </Modal>
+
+      {/* Tip Modal */}
+      <Modal visible={showTipModal} animationType="slide" transparent={true} onRequestClose={() => setShowTipModal(false)} statusBarTranslucent>
+        <KeyboardAwareScrollView contentContainerStyle={styles.modalContent}>
+          {deepLinkJar && (
+            <>
+              <Text style={styles.modalTitle}>Tip {deepLinkJar.title}</Text>
+              <Text style={styles.modalSubtitle}>Created by {deepLinkJar.creatorName}</Text>
+              <TextField label="Amount (USDC)" value={tipAmount} onChangeText={setTipAmount} keyboardType="numeric" />
+              <TextField label="Message (optional)" value={tipMessage} onChangeText={setTipMessage} />
+              {isAuthenticating ? (
+                <ActivityIndicator size="large" color={colors.primary} />
+              ) : (
+                <PrimaryButton title="Send Tip" onPress={handleSendTip} />
+              )}
+              <TouchableOpacity style={styles.modalClose} onPress={() => setShowTipModal(false)}>
+                <Text style={styles.modalCloseText}>Cancel</Text>
+              </TouchableOpacity>
+            </>
+          )}
+          {tipJarError && <Text style={styles.errorText}>{tipJarError}</Text>}
+        </KeyboardAwareScrollView>
       </Modal>
     </>
   );
@@ -307,208 +376,51 @@ export const TippingScreen: React.FC<Props> = () => {
 
 const createStyles = (colors: ColorPalette) =>
   StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: colors.background,
-    },
-    scrollContent: {
-      padding: spacing.lg,
-      paddingBottom: spacing.xl * 2,
-    },
-    header: {
-      marginBottom: spacing.lg,
-    },
-    headerTitle: {
-      ...typography.title,
-      color: colors.textPrimary,
-      marginBottom: spacing.xs,
-    },
-    headerSubtitle: {
-      ...typography.body,
-      color: colors.textSecondary,
-    },
-    card: {
-      backgroundColor: colors.cardBackground,
-      borderRadius: 18,
-      padding: spacing.lg,
-      marginBottom: spacing.md,
-    },
-    cardTitle: {
-      ...typography.subtitle,
-      color: colors.textPrimary,
-      marginBottom: spacing.md,
-    },
-    infoList: {
-      marginBottom: spacing.lg,
-    },
-    infoItem: {
-      ...typography.body,
-      color: colors.textSecondary,
-      marginBottom: spacing.sm,
-    },
-    emptyText: {
-      ...typography.body,
-      color: colors.textSecondary,
-      textAlign: "center",
-      paddingVertical: spacing.xl,
-    },
-    title: {
-      ...typography.subtitle,
-      color: colors.textPrimary,
-      textAlign: "center",
-      marginBottom: spacing.sm,
-    },
-    subtitle: {
-      ...typography.body,
-      color: colors.textSecondary,
-      textAlign: "center",
-    },
-
-    // Jar Item Styles
-    jarItem: {
-      padding: spacing.md,
-      backgroundColor: colors.background,
-      borderRadius: 12,
-      marginBottom: spacing.md,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    jarHeader: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginBottom: spacing.xs,
-    },
-    jarTitle: {
-      ...typography.subtitle,
-      fontSize: 16,
-      color: colors.textPrimary,
-      flex: 1,
-    },
-    statusBadge: {
-      paddingHorizontal: spacing.sm,
-      paddingVertical: 2,
-      borderRadius: 12,
-    },
-    statusActive: {
-      backgroundColor: colors.success + "20",
-    },
-    statusInactive: {
-      backgroundColor: colors.textSecondary + "20",
-    },
-    statusText: {
-      ...typography.caption,
-      fontSize: 10,
-      fontWeight: "700",
-      textTransform: "uppercase",
-    },
-    statusTextActive: {
-      color: colors.success,
-    },
-    statusTextInactive: {
-      color: colors.textSecondary,
-    },
-    jarStats: {
-      ...typography.caption,
-      color: colors.textSecondary,
-      marginBottom: spacing.md,
-    },
-    jarActions: {
-      flexDirection: "row",
-      gap: spacing.sm,
-    },
+    container: { flex: 1, backgroundColor: colors.background },
+    scrollContent: { padding: spacing.lg, paddingBottom: spacing.xl * 2 },
+    header: { marginBottom: spacing.lg },
+    headerTitle: { ...typography.title, color: colors.textPrimary, marginBottom: spacing.xs },
+    headerSubtitle: { ...typography.body, color: colors.textSecondary },
+    card: { backgroundColor: colors.cardBackground, borderRadius: 18, padding: spacing.lg, marginBottom: spacing.md },
+    cardTitle: { ...typography.title, color: colors.textPrimary, marginBottom: spacing.sm },
+    infoList: { marginBottom: spacing.md },
+    infoItem: { ...typography.body, color: colors.textSecondary, marginBottom: spacing.xs },
+    emptyText: { textAlign: "center", color: colors.textSecondary },
+    jarItem: { marginBottom: spacing.md, backgroundColor: colors.background, padding: spacing.md, borderRadius: 12 },
+    jarHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.xs },
+    jarTitle: { ...typography.subtitle, color: colors.textPrimary },
+    statusBadge: { paddingHorizontal: spacing.xs, paddingVertical: spacing.xs, borderRadius: 8 },
+    statusActive: { backgroundColor: colors.success },
+    statusInactive: { backgroundColor: colors.error },
+    statusText: { ...typography.caption, color: colors.background },
+    statusTextActive: { color: colors.background },
+    statusTextInactive: { color: colors.background },
+    jarStats: { ...typography.body, color: colors.textSecondary, marginBottom: spacing.sm },
+    jarActions: { flexDirection: "row", justifyContent: "space-around" },
     actionButton: {
-      paddingHorizontal: spacing.md,
-      paddingVertical: spacing.xs,
-      borderRadius: 16,
-      backgroundColor: colors.primary + "10",
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 4,
+      backgroundColor: colors.primary + "15",
+      borderRadius: 12
     },
     actionButtonText: {
       ...typography.caption,
+      fontSize: 11,
       color: colors.primary,
-      fontWeight: "600",
+      fontWeight: "600"
     },
-
-    // Modal Styles
-    modalOverlay: {
-      flex: 1,
-      backgroundColor: "rgba(0, 0, 0, 0.5)",
-      justifyContent: "flex-end",
-    },
-    modalContent: {
-      backgroundColor: colors.cardBackground,
-      borderTopLeftRadius: 24,
-      borderTopRightRadius: 24,
-      maxHeight: "90%",
-    },
-    modalHeader: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      paddingHorizontal: spacing.lg,
-      paddingTop: spacing.lg,
-      paddingBottom: spacing.md,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
-    },
-    modalTitle: {
-      ...typography.subtitle,
-      fontSize: 20,
-      fontWeight: "700",
-      color: colors.textPrimary,
-    },
-    modalClose: {
-      width: 32,
-      height: 32,
-      borderRadius: 16,
-      backgroundColor: colors.background,
-      justifyContent: "center",
-      alignItems: "center",
-    },
-    modalCloseText: {
-      fontSize: 18,
-      color: colors.textPrimary,
-      fontWeight: "600",
-    },
-    modalBody: {
-      paddingHorizontal: spacing.lg,
-      paddingVertical: spacing.lg,
-    },
-    sectionLabel: {
-      ...typography.body,
-      color: colors.textPrimary,
-      fontWeight: "600",
-      marginBottom: spacing.xs,
-    },
-    sectionHint: {
-      ...typography.caption,
-      color: colors.textSecondary,
-      marginBottom: spacing.md,
-    },
-    amountGrid: {
-      flexDirection: "row",
-      flexWrap: "wrap",
-      gap: spacing.sm,
-      marginBottom: spacing.lg,
-    },
-    amountChip: {
-      paddingHorizontal: spacing.md,
-      paddingVertical: spacing.sm,
-      borderRadius: 20,
-      borderWidth: 2,
-      borderColor: colors.border,
-      backgroundColor: colors.background,
-    },
-    amountChipSelected: {
-      borderColor: colors.primary,
-      backgroundColor: colors.primary + "20",
-    },
-    amountChipText: {
-      ...typography.body,
-      color: colors.textSecondary,
-      fontWeight: "600",
-    },
-    amountChipTextSelected: {
-      color: colors.primary,
-    },
+    modalContent: { flex: 1, justifyContent: "center", padding: spacing.lg, backgroundColor: colors.background },
+    modalTitle: { ...typography.title, color: colors.textPrimary, marginBottom: spacing.md, textAlign: "center" },
+    modalSubtitle: { ...typography.body, color: colors.textSecondary, marginBottom: spacing.md, textAlign: "center" },
+    sectionHeader: { ...typography.subtitle, color: colors.textPrimary, marginTop: spacing.lg, marginBottom: spacing.sm },
+    amountGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs, marginBottom: spacing.md },
+    amountChip: { paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, borderRadius: 12, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border },
+    amountChipSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
+    amountChipText: { ...typography.caption, color: colors.textPrimary },
+    amountChipTextSelected: { color: colors.background, fontWeight: "600" },
+    modalClose: { marginTop: spacing.md, alignItems: "center" },
+    modalCloseText: { color: colors.accent, fontSize: 16 },
+    errorText: { color: colors.error, textAlign: "center", marginTop: spacing.sm },
+    title: { ...typography.title, color: colors.textPrimary },
+    subtitle: { ...typography.body, color: colors.textSecondary },
   });

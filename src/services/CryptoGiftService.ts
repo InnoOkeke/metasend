@@ -33,6 +33,8 @@ export type CreateGiftInput = z.infer<typeof CreateGiftSchema>;
 
 export type GiftSummary = {
   giftId: string;
+  senderEmail: string;
+  senderName?: string;
   recipientEmail: string;
   recipientName?: string;
   amount: string;

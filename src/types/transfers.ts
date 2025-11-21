@@ -1,10 +1,12 @@
 export type TransferIntent = {
   recipientEmail: string;
+  recipientAddress?: string; // Optional direct address (e.g. for escrow)
   amountUsdc: number;
   memo?: string;
   senderEmail?: string;
   senderName?: string;
   senderUserId?: string;
+  skipNotification?: boolean;
 };
 
 export type TransferResult = {

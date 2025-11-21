@@ -643,7 +643,9 @@ class EmailNotificationService {
 
     const emoji = themeEmojis[theme] || "🎁";
     const subject = `${emoji} ${senderName} sent you a crypto gift!`;
-    const giftLink = `${this.APP_URL}/gifts/${giftId}`;
+    // Use the frontend URL for claiming, matching CryptoGiftService
+    const frontendUrl = "https://metasend.vercel.app";
+    const giftLink = `${frontendUrl}/gift/${giftId}`;
 
     const html = `
       <!DOCTYPE html>

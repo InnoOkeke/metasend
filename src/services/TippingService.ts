@@ -118,6 +118,17 @@ class TippingService {
   }
 
   /**
+   * Get tip jar by username
+   */
+  async getTipJarByUsername(username: string): Promise<TipJar | null> {
+    const response = await fetch(`${this.apiBaseUrl}/api/tips?username=${username}`);
+    if (!response.ok) {
+      return null;
+    }
+    return await response.json();
+  }
+
+  /**
    * Get tip jars created by user
    */
   async getMyTipJars(userId: string): Promise<TipJarSummary[]> {

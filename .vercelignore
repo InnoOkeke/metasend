@@ -51,6 +51,21 @@ yarn-error.*
 # Misc
 server.ts
 tsconfig.server.json
+src/
 *.md
 README.md
 package-lock.json
+
+# Backend API files (Render only)
+api/gifts.ts
+api/health.ts
+api/invoices.ts
+api/payment-requests.ts
+api/pending-transfers.ts
+api/send-email.ts
+api/tips.ts
+api/transfers.ts
+api/users.ts
+api/cron/
+api/international/
+api-express/

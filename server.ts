@@ -34,6 +34,8 @@ import transfersHandler from './api/transfers';
 import usersHandler from './api/users';
 import processExpiryHandler from './api/cron/process-expiry';
 import sendRemindersHandler from './api/cron/send-reminders';
+import internationalQuotesHandler from './api/international/quotes';
+import internationalTransfersHandler from './api/international/transfers';
 
 // Mount API routes (adapted from Vercel to Express)
 // Mount express Routers directly
@@ -50,11 +52,13 @@ import webRouter from './api/web';
 app.use('/api/web', webRouter);
 app.all('/api/cron/process-expiry', adaptVercelHandler(processExpiryHandler));
 app.all('/api/cron/send-reminders', adaptVercelHandler(sendRemindersHandler));
+app.all('/api/international/quotes', adaptVercelHandler(internationalQuotesHandler));
+app.all('/api/international/transfers', adaptVercelHandler(internationalTransfersHandler));
 
 // Root endpoint
 app.get('/', (req, res) => {
-  res.json({ 
-    success: true, 
+  res.json({
+    success: true,
     message: 'MetaSend API',
     version: '1.0.0'
   });

@@ -244,7 +244,7 @@ class EscrowService {
     }
 
     if (!this.driverPromise) {
-      this.driverPromise = import("./server/SharedEscrowDriver");
+      this.driverPromise = import("./server/SharedEscrowDriver.js");
     }
 
     return this.driverPromise;

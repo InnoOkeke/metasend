@@ -51,7 +51,6 @@ yarn-error.*
 # Misc
 server.ts
 tsconfig.server.json
-src/
 *.md
 README.md
 package-lock.json

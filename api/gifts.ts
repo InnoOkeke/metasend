@@ -9,7 +9,7 @@ import mongoDb from "../src/services/mongoDatabase";
 import { userDirectoryService } from "../src/services/UserDirectoryService";
 import { pendingTransferService } from "../src/services/PendingTransferService";
 import { CryptoGift, GiftStatus, GiftTheme } from "../src/types/database";
-import { USDC_TOKEN_ADDRESS, USDC_DECIMALS } from "../src/config/coinbase";
+import { USDC_TOKEN_ADDRESS, USDC_DECIMALS } from "../src/config/coinbase.server";
 import { generateGiftCode } from "../src/utils/giftCode";
 
 const CreateGiftSchema = z.object({

@@ -32,6 +32,7 @@ import sendEmailHandler from './api/send-email';
 import tipsHandler from './api/tips';
 import transfersHandler from './api/transfers';
 import usersHandler from './api/users';
+import coinbaseSessionHandler from './api/coinbase-session';
 import processExpiryHandler from './api/cron/process-expiry';
 import sendRemindersHandler from './api/cron/send-reminders';
 import internationalQuotesHandler from './api/international/quotes';
@@ -48,6 +49,9 @@ app.use('/api/send-email', sendEmailHandler);
 app.use('/api/tips', tipsHandler);
 app.use('/api/transfers', transfersHandler);
 app.use('/api/users', usersHandler);
+// Mount coinbase session handler directly as it's Express-compatible
+import type expressType from 'express';
+app.post('/api/coinbase-session', (coinbaseSessionHandler as unknown) as express.RequestHandler);
 import webRouter from './api/web';
 app.use('/api/web', webRouter);
 app.all('/api/cron/process-expiry', adaptVercelHandler(processExpiryHandler));

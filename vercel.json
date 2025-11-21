@@ -4,10 +4,6 @@
     {
       "src": "api/index.ts",
       "use": "@vercel/node"
-    },
-    {
-      "src": "api/web.ts",
-      "use": "@vercel/node"
     }
   ],
   "routes": [
@@ -25,27 +21,31 @@
     },
     {
       "src": "/claim/(.*)",
-      "dest": "/api/web.ts"
+      "status": 308,
+      "headers": {
+        "Location": "https://metasend-api.onrender.com/api/web/claim/$1"
+      }
     },
     {
       "src": "/pay/(.*)",
-      "dest": "/api/web.ts"
+      "status": 308,
+      "headers": {
+        "Location": "https://metasend-api.onrender.com/api/web/pay/$1"
+      }
     },
     {
       "src": "/gift/(.*)",
-      "dest": "/api/web.ts"
-    },
-    {
-      "src": "/gifts/(.*)",
-      "dest": "/api/web.ts"
+      "status": 308,
+      "headers": {
+        "Location": "https://metasend-api.onrender.com/api/web/gift/$1"
+      }
     },
     {
       "src": "/tip/(.*)",
-      "dest": "/api/web.ts"
-    },
-    {
-      "src": "/tipjar/(.*)",
-      "dest": "/api/web.ts"
+      "status": 308,
+      "headers": {
+        "Location": "https://metasend-api.onrender.com/api/web/tip/$1"
+      }
     }
   ]
 }

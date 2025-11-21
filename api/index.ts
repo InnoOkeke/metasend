@@ -1,6 +1,6 @@
-import { Request, Response } from "express";
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-export default function handler(req: Request, res: Response) {
+export default function handler(req: VercelRequest, res: VercelResponse) {
   res.status(200).send(`
     <!DOCTYPE html>
     <html lang="en">

@@ -18,6 +18,9 @@ import { InvoicesScreen } from "../screens/InvoicesScreen";
 import { GiftsScreen } from "../screens/GiftsScreen";
 import { ClaimScreen } from "../screens/Claim/ClaimScreen";
 import { InternationalTransferScreen } from "../screens/InternationalTransfer/InternationalTransferScreen";
+import { DepositScreen } from "../screens/DepositScreen";
+import { ProvidersScreen } from "../screens/ProvidersScreen";
+import { WithdrawScreen } from "../screens/WithdrawScreen";
 import { RETURNING_USER_KEY, BIOMETRIC_AUTH_KEY } from "../constants/auth";
 
 export type RootStackParamList = {
@@ -32,6 +35,9 @@ export type RootStackParamList = {
   Invoices: { invoiceId?: string } | undefined;
   Gifts: { giftId?: string } | undefined;
   Claim: { transferId: string };
+  Deposit: undefined;
+  Providers: { amount: string; method: string };
+  Withdraw: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -192,6 +198,8 @@ export const RootNavigator: React.FC = () => {
             PaymentRequests: 'pay/:requestId',
             Invoices: 'invoice/:invoiceId',
             Gifts: 'gift/:giftId',
+            Deposit: 'deposit',
+            Providers: 'providers',
           },
         },
       }}
@@ -212,6 +220,9 @@ export const RootNavigator: React.FC = () => {
           <Stack.Screen name="PaymentRequests" component={PaymentRequestsScreen} options={{ title: "Payment Requests" }} />
           <Stack.Screen name="Invoices" component={InvoicesScreen} options={{ title: "Invoices" }} />
           <Stack.Screen name="Gifts" component={GiftsScreen} options={{ title: "Gifts" }} />
+          <Stack.Screen name="Deposit" component={DepositScreen} options={{ title: "Deposit Funds" }} />
+          <Stack.Screen name="Providers" component={ProvidersScreen} options={{ title: "Select Provider", presentation: 'modal' }} />
+          <Stack.Screen name="Withdraw" component={WithdrawScreen} options={{ title: "Withdraw Funds" }} />
         </Stack.Navigator>
       ) : (
         <Stack.Navigator screenOptions={{ ...screenOptions, headerShown: false }}>

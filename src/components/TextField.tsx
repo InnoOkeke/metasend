@@ -46,7 +46,7 @@ const createStyles = (colors: ColorPalette) =>
       borderRadius: 12,
       color: colors.textPrimary,
       fontSize: 16,
-      backgroundColor: colors.cardBackground,
+      backgroundColor: "#1c193518",
     },
     inputError: {
       borderColor: colors.error,

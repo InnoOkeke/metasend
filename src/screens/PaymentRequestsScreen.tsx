@@ -302,7 +302,7 @@ export const PaymentRequestsScreen: React.FC<Props> = ({ route, navigation }) =>
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>📋 Transaction History</Text>
+          <Text style={styles.cardTitle}>📋 Recent Activity</Text>
           {isLoadingRequests ? (
             <ActivityIndicator color={colors.primary} />
           ) : allRequests && allRequests.length > 0 ? (

@@ -357,7 +357,7 @@ export const TippingScreen: React.FC<Props> = ({ route, navigation }) => {
               return (
                 <TransactionCard
                   key={jar.jarId}
-                  icon={<View style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center' }}><Text style={{ color: colors.background, fontWeight: '700' }}>$</Text></View>}
+                  icon={undefined}
                   title={jar.title}
                   subtitle={`${jar.tipCount} tips • $${jar.totalTipsReceived.toFixed(2)} received`}
                   amount={undefined}
@@ -433,30 +433,30 @@ export const TippingScreen: React.FC<Props> = ({ route, navigation }) => {
               ) : (
                 <PrimaryButton title="Send Tip" onPress={handleSendTip} />
               )}
-                  {/* Recent tips for this jar */}
-                  <Text style={[styles.sectionHeader, { marginTop: spacing.md }]}>Recent Tips</Text>
-                  {isLoadingTips ? (
-                    <ActivityIndicator color={colors.primary} />
-                  ) : recentTips && recentTips.length > 0 ? (
-                    recentTips.map((tip: any) => {
-                      const txHash = tip.transactionHash || tip.transactionHash;
-                      return (
-                        <TransactionCard
-                          key={tip.tipId}
-                          icon={<View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center' }}><Text style={{ color: colors.background, fontWeight: '700' }}>$</Text></View>}
-                          title={tip.isAnonymous ? "Anonymous" : tip.tipperName || tip.tipperEmail}
-                          subtitle={new Date(tip.createdAt).toLocaleString()}
-                          amount={`+${tip.amount} ${tip.token}`}
-                          date={new Date(tip.createdAt).toLocaleString()}
-                          transactionHash={txHash}
-                          explorerUrl={Constants?.expoConfig?.extra?.BASE_EXPLORER_URL}
-                          onPressHash={txHash ? () => Linking.openURL(`${Constants?.expoConfig?.extra?.BASE_EXPLORER_URL}/tx/${txHash}`) : undefined}
-                        />
-                      );
-                    })
-                  ) : (
-                    <Text style={styles.emptyText}>No tips yet</Text>
-                  )}
+              {/* Recent tips for this jar */}
+              <Text style={[styles.sectionHeader, { marginTop: spacing.md }]}>Recent Tips</Text>
+              {isLoadingTips ? (
+                <ActivityIndicator color={colors.primary} />
+              ) : recentTips && recentTips.length > 0 ? (
+                recentTips.map((tip: any) => {
+                  const txHash = tip.transactionHash || tip.transactionHash;
+                  return (
+                    <TransactionCard
+                      key={tip.tipId}
+                      icon={undefined}
+                      title={tip.isAnonymous ? "Anonymous" : tip.tipperName || tip.tipperEmail}
+                      subtitle={new Date(tip.createdAt).toLocaleString()}
+                      amount={`+${tip.amount} ${tip.token}`}
+                      date={new Date(tip.createdAt).toLocaleString()}
+                      transactionHash={txHash}
+                      explorerUrl={Constants?.expoConfig?.extra?.BASE_EXPLORER_URL}
+                      onPressHash={txHash ? () => Linking.openURL(`${Constants?.expoConfig?.extra?.BASE_EXPLORER_URL}/tx/${txHash}`) : undefined}
+                    />
+                  );
+                })
+              ) : (
+                <Text style={styles.emptyText}>No tips yet</Text>
+              )}
               <TouchableOpacity style={styles.modalClose} onPress={() => setShowTipModal(false)}>
                 <Text style={styles.modalCloseText}>Cancel</Text>
               </TouchableOpacity>

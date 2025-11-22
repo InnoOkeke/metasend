@@ -81,7 +81,7 @@ export const CoinbaseProvider: React.FC<React.PropsWithChildren> = ({ children }
         const syncedProfile: CoinbaseProfile = {
           userId: directoryProfile.userId,
           email: directoryProfile.email,
-          walletAddress: directoryProfile.wallets.evm || walletAddress,
+          walletAddress: directoryProfile.wallets.base || walletAddress,
           displayName: directoryProfile.profile.displayName || displayName,
           photoUrl: directoryProfile.profile.avatar,
         };

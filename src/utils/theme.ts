@@ -15,35 +15,35 @@ export type ColorPalette = {
 };
 
 export const lightColors: ColorPalette = {
-  background: "#F8FAFC",
+  background: "#F5F7FA",          // Soft Grey
   cardBackground: "#FFFFFF",
-  textPrimary: "#1E293B",
-  textSecondary: "#475569",
+  textPrimary: "#003366",         // Deep Navy
+  textSecondary: "#5A6B7C",       // Greyish Navy
   inverseText: "#FFFFFF",
-  primary: "#3A80F7",
-  primaryDisabled: "#A8C2FF",
-  accent: "#10B981",
-  accentDisabled: "#74E0C4",
-  border: "#CBD5F5",
-  error: "#DC2626",
-  success: "#10B981",
+  primary: "#00C2FF",             // Aqua
+  primaryDisabled: "#80E0FF",
+  accent: "#003366",              // Deep Navy
+  accentDisabled: "#4D7099",
+  border: "#E1E8ED",              // Light Grey
+  error: "#EF4444",
+  success: "#00C2FF",
   warning: "#F59E0B",
 };
 
 export const darkColors: ColorPalette = {
-  background: "#0B1324",
-  cardBackground: "#1E293B",
-  textPrimary: "#F8FAFC",
-  textSecondary: "#94A3B8",
-  inverseText: "#FFFFFF",
-  primary: "#3A80F7",
-  primaryDisabled: "#6AA0F9",
-  accent: "#10B981",
-  accentDisabled: "#1F8F6E",
-  border: "#233044",
+  background: "#003366",          // Deep Navy
+  cardBackground: "#004080",      // Lighter Navy for cards
+  textPrimary: "#FFFFFF",         // White
+  textSecondary: "#B0C4DE",       // Light Steel Blue
+  inverseText: "#003366",
+  primary: "#00C2FF",             // Aqua
+  primaryDisabled: "#008FBD",
+  accent: "#FFFFFF",              // White
+  accentDisabled: "#CCCCCC",
+  border: "#004080",              // Lighter Navy
   error: "#F87171",
-  success: "#10B981",
-  warning: "#F59E0B",
+  success: "#34D399",
+  warning: "#FBBF24",
 };
 
 export const spacing = {

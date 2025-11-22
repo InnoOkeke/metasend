@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState, useEffect } from "react";
-import { ActivityIndicator, StyleSheet, Text, View, FlatList, ListRenderItemInfo, RefreshControl, Modal, Pressable, TouchableOpacity, ScrollView, Clipboard, Alert, BackHandler } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, View, FlatList, ListRenderItemInfo, RefreshControl, Modal, Pressable, TouchableOpacity, ScrollView, Clipboard, Alert, BackHandler, SafeAreaView } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useFocusEffect } from "@react-navigation/native";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -39,9 +39,14 @@ export type HomeScreenProps = NativeStackScreenProps<RootStackParamList, "Home">
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   const { profile, disconnect } = useCoinbase();
+  // Hide header for this screen
+  React.useLayoutEffect(() => {
+    navigation.setOptions({ headerShown: false });
+  }, [navigation]);
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const [isExchangeModalVisible, setIsExchangeModalVisible] = useState(false);
+  const [isDepositModalVisible, setIsDepositModalVisible] = useState(false);
+  const [isWithdrawModalVisible, setIsWithdrawModalVisible] = useState(false);
   const [isSendOptionsVisible, setIsSendOptionsVisible] = useState(false);
   const [isMoreFeaturesModalVisible, setIsMoreFeaturesModalVisible] = useState(false);
   const [isLocationModalVisible, setIsLocationModalVisible] = useState(false);
@@ -70,12 +75,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
       setFxRate(1);
       return;
     }
-    
+
     try {
       // Using a free FX API (exchangerate-api.com)
       const response = await fetch(`https://api.exchangerate-api.com/v4/latest/USD`);
       const data = await response.json();
-      
+
       if (data.rates && data.rates[currency]) {
         setFxRate(data.rates[currency]);
       } else {
@@ -237,7 +242,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     enabled: hasBaseWallet,
     refetchInterval: 15000, // Refetch every 15 seconds
   });
-  
+
   const {
     data: pendingTransfers = [],
     isFetching: loadingPendingTransfers,
@@ -331,7 +336,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     const initializeLocation = async () => {
       const permission = await checkLocationPermission();
       setLocationPermission(permission);
-      
+
       if (permission === 'granted') {
         const location = await getUserLocation();
         if (location) {
@@ -343,7 +348,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         }
       }
     };
-    
+
     initializeLocation();
   }, []);
 
@@ -379,19 +384,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   };
 
   const handleBuyFunds = () => {
-    setSelectedRampType("onramp");
-    setIsExchangeModalVisible(false);
+    setIsDepositModalVisible(true);
   };
 
   const handleWithdraw = () => {
-    setSelectedRampType("offramp");
-    setIsExchangeModalVisible(false);
+    setIsWithdrawModalVisible(true);
   };
 
   const handleProviderSelect = (provider: RampProvider) => {
     setSelectedProvider(provider);
     const info = getProviderInfo(provider);
-    
+
     if (info.supportsPaymentMethods) {
       setSelectedPaymentMethod(null);
     } else {
@@ -423,7 +426,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   };
 
   // Combined activity list (blockchain transactions + app transfers)
-  type Activity = 
+  type Activity =
     | { type: "app-transfer"; data: TransferRecord; timestamp: number }
     | { type: "blockchain-tx"; data: BlockchainTransaction; timestamp: number };
 
@@ -523,7 +526,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   const handleRequestLocation = async () => {
     const status = await requestLocationPermission();
     setLocationPermission(status);
-    
+
     if (status === 'granted') {
       const location = await getUserLocation();
       if (location) {
@@ -533,14 +536,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         setUserCurrency(currencyData.currency);
         setCurrencySymbol(currencyData.symbol);
         await fetchFxRate(currencyData.currency);
-        
+
         // Refresh providers if on withdraw screen
         if (selectedRampType) {
           getAvailableProviders(selectedRampType).then(providers => {
             setAvailableProviders(providers);
           });
         }
-        
+
         setIsLocationModalVisible(false);
         Alert.alert(
           "Location Access Granted",
@@ -557,936 +560,881 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
 
   return (
     <>
-      <View style={styles.container}>
-      {/* Home Screen */}
-      {activeTab === "home" && (
-        <>
-      <View style={styles.heroCard}>
-        <View style={styles.profileRow}>
-          <View style={styles.profileDetails}>
-            <Text style={styles.greeting}>Welcome back,</Text>
-            <Text style={styles.username}>{profile?.displayName ?? profile?.email}</Text>
-          </View>
-          <TouchableOpacity style={styles.locationIcon} onPress={handleLocationIconPress}>
-            <Text style={styles.locationEmoji}>📍</Text>
-            {userCountryCode && (
-              <Text style={styles.locationText}>{userCountryCode}</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-        <View style={styles.balanceSection}>
-          <Text style={styles.balanceLabel}>Total Balance</Text>
-          <Text style={styles.balanceAmount}>
-            {loadingBalance ? "..." : usdcBalance !== undefined ? `${currencySymbol}${(usdcBalance * fxRate).toFixed(2)}` : `${currencySymbol}0.00`}
-          </Text>
-          <Text style={styles.balanceSubtext}>
-            {usdcBalance !== undefined && fxRate !== 1 ? `≈ $${usdcBalance.toFixed(2)} USDC · ` : ''}Base Sepolia
-          </Text>
-        </View>
-        <TouchableOpacity style={styles.walletPill} onPress={copyWalletAddress} activeOpacity={0.7}>
-          <Text style={styles.walletLabel}>📍 Wallet</Text>
-          <Text style={styles.walletAddress}>
-            {profile && profile.walletAddress
-              ? hasBaseWallet
-                ? formatShortAddress(profile.walletAddress)
-                : "Base wallet pending"
-              : "-"}
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {pendingClaimables.length > 0 && (
-        <View style={styles.pendingTransfersCard}>
-          <Text style={styles.pendingTitle}>Transfers waiting for you</Text>
-          <Text style={styles.pendingSubtitle}>
-            We auto-claim as soon as you sign in. If something is still pending, use the buttons below to finish the claim.
-          </Text>
-
-          {displayedPendingTransfers.map((transfer) => {
-            const isClaimingThis =
-              claimTransferMutation.isPending && claimTransferMutation.variables === transfer.transferId;
-            return (
-              <View key={transfer.transferId} style={styles.pendingRow}>
-                <View style={styles.pendingInfo}>
-                  <Text style={styles.pendingAmount}>
-                    {transfer.amount} {transfer.token}
-                  </Text>
-                  <Text style={styles.pendingMeta}>from {transfer.senderName || transfer.senderEmail}</Text>
-                  <Text style={styles.pendingMeta}>Expires in {getDaysRemaining(transfer)} days</Text>
-                  <TouchableOpacity
-                    onPress={() => navigation.navigate("Claim", { transferId: transfer.transferId })}
-                    style={styles.pendingLinkButton}
-                  >
-                    <Text style={styles.pendingLinkText}>Open manual claim screen</Text>
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.container}>
+          {/* Home Screen */}
+          {activeTab === "home" && (
+            <>
+              <View style={styles.heroCard}>
+                <View style={styles.profileRow}>
+                  <View style={styles.profileDetails}>
+                    <Text style={styles.greeting}>Welcome back,</Text>
+                    <Text style={styles.username}>{profile?.displayName ?? profile?.email}</Text>
+                  </View>
+                  <TouchableOpacity style={styles.locationIcon} onPress={handleLocationIconPress}>
+                    <Text style={styles.locationEmoji}>📍</Text>
+                    {userCountryCode && (
+                      <Text style={styles.locationText}>{userCountryCode}</Text>
+                    )}
                   </TouchableOpacity>
                 </View>
-                <TouchableOpacity
-                  style={[
-                    styles.pendingClaimButton,
-                    (isClaimingThis || claimAllMutation.isPending) && styles.pendingClaimButtonDisabled,
-                  ]}
-                  onPress={() => handleManualClaim(transfer)}
-                  disabled={isClaimingThis || claimAllMutation.isPending}
-                >
-                  {isClaimingThis ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                  ) : (
-                    <Text style={styles.pendingClaimButtonText}>Claim</Text>
-                  )}
+                <View style={styles.balanceSection}>
+                  <Text style={styles.balanceLabel}>Total Balance</Text>
+                  <Text style={styles.balanceAmount}>
+                    {loadingBalance ? "..." : usdcBalance !== undefined ? `${currencySymbol}${(usdcBalance * fxRate).toFixed(2)}` : `${currencySymbol}0.00`}
+                  </Text>
+                  <Text style={styles.balanceSubtext}>
+                    {usdcBalance !== undefined && fxRate !== 1 ? `≈ $${usdcBalance.toFixed(2)} USDC · ` : ''}Base Sepolia
+                  </Text>
+                </View>
+                <TouchableOpacity style={styles.walletPill} onPress={copyWalletAddress} activeOpacity={0.7}>
+                  <Text style={styles.walletLabel}>📍 Wallet</Text>
+                  <Text style={styles.walletAddress}>
+                    {profile && profile.walletAddress
+                      ? hasBaseWallet
+                        ? formatShortAddress(profile.walletAddress)
+                        : "Base wallet pending"
+                      : "-"}
+                  </Text>
                 </TouchableOpacity>
               </View>
-            );
-          })}
 
-          {pendingClaimables.length > displayedPendingTransfers.length && (
-            <Text style={styles.pendingMeta}>
-              +{pendingClaimables.length - displayedPendingTransfers.length} more pending transfer
-              {pendingClaimables.length - displayedPendingTransfers.length > 1 ? "s" : ""}
-            </Text>
-          )}
+              {pendingClaimables.length > 0 && (
+                <View style={styles.pendingTransfersCard}>
+                  <Text style={styles.pendingTitle}>Transfers waiting for you</Text>
+                  <Text style={styles.pendingSubtitle}>
+                    We auto-claim as soon as you sign in. If something is still pending, use the buttons below to finish the claim.
+                  </Text>
 
-          <TouchableOpacity
-            style={[
-              styles.claimAllButton,
-              claimAllMutation.isPending && styles.pendingClaimButtonDisabled,
-            ]}
-            onPress={handleManualClaimAll}
-            disabled={claimAllMutation.isPending}
-          >
-            {claimAllMutation.isPending ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <Text style={styles.claimAllButtonText}>Claim everything automatically</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      )}
-
-      <View style={styles.quickActions}>
-        <TouchableOpacity style={styles.actionCard} onPress={handleOpenSendOptions}>
-          <View style={styles.actionIconContainer}>
-            <Text style={styles.actionIcon}>📤</Text>
-          </View>
-          <Text style={styles.actionLabel}>Send</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.actionCard} onPress={handleBuyFunds}>
-          <View style={styles.actionIconContainer}>
-            <Text style={styles.actionIcon}>💳</Text>
-          </View>
-          <Text style={styles.actionLabel}>Add Funds</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.actionCard} onPress={handleWithdraw}>
-          <View style={styles.actionIconContainer}>
-            <Text style={styles.actionIcon}>💰</Text>
-          </View>
-          <Text style={styles.actionLabel}>Withdraw</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.actionCard} onPress={() => setIsMoreFeaturesModalVisible(true)}>
-          <View style={styles.actionIconContainer}>
-            <Text style={styles.actionIcon}>✨</Text>
-          </View>
-          <Text style={styles.actionLabel}>More</Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.sectionHeader}>
-        <View style={styles.sectionTitleRow}>
-          <View>
-            <Text style={styles.sectionTitle}>Recent Transactions</Text>
-            <Text style={styles.sectionSubtitle}>Latest activity on your wallet</Text>
-          </View>
-          <TouchableOpacity onPress={() => navigation.navigate('TransactionHistory')}>
-            <Text style={styles.seeAllText}>See All</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <FlatList
-        data={hasBaseWallet ? activities.slice(0, 5) : []}
-        keyExtractor={(item, index) => `${item.type}-${item.type === "app-transfer" ? item.data.id : item.data.hash}-${index}`}
-        renderItem={renderActivity}
-        style={styles.list}
-        contentContainerStyle={styles.listContentHome}
-        ListEmptyComponent={
-          <Text style={styles.emptyState}>
-            {!hasBaseWallet
-              ? "Connect your wallet to view transactions"
-              : isLoading || loadingBlockchainTxs
-              ? "Loading transactions..."
-              : "No transactions yet"}
-          </Text>
-        }
-      />
-
-        </>
-      )}
-
-      {isSendOptionsVisible && (
-        <View style={styles.inlineSendOverlay} pointerEvents="box-none">
-          <Pressable style={styles.inlineSendBackdrop} onPress={handleCloseSendOptions} />
-          <View style={styles.inlineSendSheet} accessibilityLabel="Send options">
-            <Text style={styles.inlineSendTitle}>Choose how to send</Text>
-            <Text style={styles.inlineSendSubtitle}>
-              Pick MetaSend email delivery or route funds to a global payout provider.
-            </Text>
-
-            <TouchableOpacity style={styles.inlineSendButton} onPress={handleSendViaEmail}>
-              <View style={styles.inlineSendButtonCopy}>
-                <Text style={styles.inlineSendButtonTitle}>Send via email</Text>
-                <Text style={styles.inlineSendButtonSubtitle}>
-                  Resolve wallets automatically and keep funds pending for new recipients.
-                </Text>
-              </View>
-              <Text style={styles.inlineSendBadge}>MetaSend</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.inlineSendButton} onPress={handleInternationalTransfer}>
-              <View style={styles.inlineSendButtonCopy}>
-                <Text style={styles.inlineSendButtonTitle}>International transfer</Text>
-                <Text style={styles.inlineSendButtonSubtitle}>
-                  Bank, mobile money, and card payouts via Coinbase, MoonPay, Transak & more.
-                </Text>
-              </View>
-              <Text style={styles.inlineSendBadge}>New</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.inlineSendDismiss} onPress={handleCloseSendOptions}>
-              <Text style={styles.inlineSendDismissText}>Dismiss</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
-      {/* More Features Modal */}
-      <Modal
-        visible={isMoreFeaturesModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setIsMoreFeaturesModalVisible(false)}
-      >
-        <Pressable style={styles.modalOverlay} onPress={() => setIsMoreFeaturesModalVisible(false)}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>More Features</Text>
-            
-            <TouchableOpacity 
-              style={styles.modalOption}
-              onPress={() => {
-                setIsMoreFeaturesModalVisible(false);
-                navigation.navigate('TransactionHistory');
-              }}
-            >
-              <View style={styles.modalOptionIcon}>
-                <Text style={styles.modalOptionEmoji}>📊</Text>
-              </View>
-              <View style={styles.modalOptionText}>
-                <Text style={styles.modalOptionTitle}>Transaction History</Text>
-                <Text style={styles.modalOptionSubtitle}>View all your transactions</Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.modalOption}
-              onPress={() => {
-                setIsMoreFeaturesModalVisible(false);
-                navigation.navigate('Tipping');
-              }}
-            >
-              <View style={styles.modalOptionIcon}>
-                <Text style={styles.modalOptionEmoji}>💸</Text>
-              </View>
-              <View style={styles.modalOptionText}>
-                <Text style={styles.modalOptionTitle}>Micro-Tipping</Text>
-                <Text style={styles.modalOptionSubtitle}>Send tips to creators</Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.modalOption}
-              onPress={() => {
-                setIsMoreFeaturesModalVisible(false);
-                navigation.navigate('PaymentRequests');
-              }}
-            >
-              <View style={styles.modalOptionIcon}>
-                <Text style={styles.modalOptionEmoji}>📧</Text>
-              </View>
-              <View style={styles.modalOptionText}>
-                <Text style={styles.modalOptionTitle}>Payment Requests</Text>
-                <Text style={styles.modalOptionSubtitle}>Request payments via email</Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.modalOption}
-              onPress={() => {
-                setIsMoreFeaturesModalVisible(false);
-                navigation.navigate('Invoices');
-              }}
-            >
-              <View style={styles.modalOptionIcon}>
-                <Text style={styles.modalOptionEmoji}>📄</Text>
-              </View>
-              <View style={styles.modalOptionText}>
-                <Text style={styles.modalOptionTitle}>Invoices</Text>
-                <Text style={styles.modalOptionSubtitle}>Create professional invoices</Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.modalOption}
-              onPress={() => {
-                setIsMoreFeaturesModalVisible(false);
-                navigation.navigate('Gifts');
-              }}
-            >
-              <View style={styles.modalOptionIcon}>
-                <Text style={styles.modalOptionEmoji}>🎁</Text>
-              </View>
-              <View style={styles.modalOptionText}>
-                <Text style={styles.modalOptionTitle}>Crypto Gifts</Text>
-                <Text style={styles.modalOptionSubtitle}>Send themed crypto gifts</Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={[styles.modalOption, { borderBottomWidth: 0 }]}
-              onPress={() => setIsMoreFeaturesModalVisible(false)}
-            >
-              <View style={styles.modalOptionIcon}>
-                <Text style={styles.modalOptionEmoji}>✖️</Text>
-              </View>
-              <View style={styles.modalOptionText}>
-                <Text style={styles.modalOptionTitle}>Cancel</Text>
-              </View>
-            </TouchableOpacity>
-          </View>
-        </Pressable>
-      </Modal>
-
-      {/* Location Modal */}
-      <Modal
-        visible={isLocationModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setIsLocationModalVisible(false)}
-      >
-        <Pressable style={styles.modalOverlay} onPress={() => setIsLocationModalVisible(false)}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>Location & Currency</Text>
-            
-            <View style={styles.locationInfoContainer}>
-              <View style={styles.locationInfoRow}>
-                <Text style={styles.locationInfoLabel}>Current Location:</Text>
-                <Text style={styles.locationInfoValue}>{userCountry || 'Not set'}</Text>
-              </View>
-              <View style={styles.locationInfoRow}>
-                <Text style={styles.locationInfoLabel}>Display Currency:</Text>
-                <Text style={styles.locationInfoValue}>{userCurrency} ({currencySymbol})</Text>
-              </View>
-              {fxRate !== 1 && (
-                <View style={styles.locationInfoRow}>
-                  <Text style={styles.locationInfoLabel}>Exchange Rate:</Text>
-                  <Text style={styles.locationInfoValue}>1 USD = {fxRate.toFixed(4)} {userCurrency}</Text>
-                </View>
-              )}
-              <View style={styles.locationInfoRow}>
-                <Text style={styles.locationInfoLabel}>Permission Status:</Text>
-                <Text style={[styles.locationInfoValue, locationPermission === 'granted' ? styles.permissionGranted : styles.permissionDenied]}>
-                  {locationPermission === 'granted' ? '✓ Granted' : locationPermission === 'denied' ? '✗ Denied' : '⊙ Not Set'}
-                </Text>
-              </View>
-            </View>
-
-            <TouchableOpacity 
-              style={styles.modalOption}
-              onPress={() => {
-                setIsLocationModalVisible(false);
-                handleRequestLocation();
-              }}
-            >
-              <View style={styles.modalOptionIcon}>
-                <Text style={styles.modalOptionEmoji}>📍</Text>
-              </View>
-              <View style={styles.modalOptionText}>
-                <Text style={styles.modalOptionTitle}>Update Location</Text>
-                <Text style={styles.modalOptionSubtitle}>Use GPS to detect your location</Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={[styles.modalOption, { borderBottomWidth: 0 }]}
-              onPress={() => setIsLocationModalVisible(false)}
-            >
-              <View style={styles.modalOptionIcon}>
-                <Text style={styles.modalOptionEmoji}>✖️</Text>
-              </View>
-              <View style={styles.modalOptionText}>
-                <Text style={styles.modalOptionTitle}>Cancel</Text>
-              </View>
-            </TouchableOpacity>
-          </View>
-        </Pressable>
-      </Modal>
-
-      {/* More Features Modal */}
-      <Modal
-        visible={isMoreFeaturesModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setIsMoreFeaturesModalVisible(false)}
-      >
-        <Pressable style={styles.modalOverlay} onPress={() => setIsMoreFeaturesModalVisible(false)}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>More Features</Text>
-            
-            <TouchableOpacity 
-              style={styles.modalOption}
-              onPress={() => {
-                setIsMoreFeaturesModalVisible(false);
-                navigation.navigate('TransactionHistory');
-              }}
-            >
-              <View style={styles.modalOptionIcon}>
-                <Text style={styles.modalOptionEmoji}>📊</Text>
-              </View>
-              <View style={styles.modalOptionText}>
-                <Text style={styles.modalOptionTitle}>Transaction History</Text>
-                <Text style={styles.modalOptionSubtitle}>View all your transactions</Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.modalOption}
-              onPress={() => {
-                setIsMoreFeaturesModalVisible(false);
-                navigation.navigate('Tipping');
-              }}
-            >
-              <View style={styles.modalOptionIcon}>
-                <Text style={styles.modalOptionEmoji}>💸</Text>
-              </View>
-              <View style={styles.modalOptionText}>
-                <Text style={styles.modalOptionTitle}>Micro-Tipping</Text>
-                <Text style={styles.modalOptionSubtitle}>Send tips to creators</Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.modalOption}
-              onPress={() => {
-                setIsMoreFeaturesModalVisible(false);
-                navigation.navigate('PaymentRequests');
-              }}
-            >
-              <View style={styles.modalOptionIcon}>
-                <Text style={styles.modalOptionEmoji}>📧</Text>
-              </View>
-              <View style={styles.modalOptionText}>
-                <Text style={styles.modalOptionTitle}>Payment Requests</Text>
-                <Text style={styles.modalOptionSubtitle}>Request payments via email</Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.modalOption}
-              onPress={() => {
-                setIsMoreFeaturesModalVisible(false);
-                navigation.navigate('Invoices');
-              }}
-            >
-              <View style={styles.modalOptionIcon}>
-                <Text style={styles.modalOptionEmoji}>📄</Text>
-              </View>
-              <View style={styles.modalOptionText}>
-                <Text style={styles.modalOptionTitle}>Invoices</Text>
-                <Text style={styles.modalOptionSubtitle}>Create professional invoices</Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.modalOption}
-              onPress={() => {
-                setIsMoreFeaturesModalVisible(false);
-                navigation.navigate('Gifts');
-              }}
-            >
-              <View style={styles.modalOptionIcon}>
-                <Text style={styles.modalOptionEmoji}>🎁</Text>
-              </View>
-              <View style={styles.modalOptionText}>
-                <Text style={styles.modalOptionTitle}>Crypto Gifts</Text>
-                <Text style={styles.modalOptionSubtitle}>Send themed crypto gifts</Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={[styles.modalOption, { borderBottomWidth: 0 }]}
-              onPress={() => setIsMoreFeaturesModalVisible(false)}
-            >
-              <View style={styles.modalOptionIcon}>
-                <Text style={styles.modalOptionEmoji}>✖️</Text>
-              </View>
-              <View style={styles.modalOptionText}>
-                <Text style={styles.modalOptionTitle}>Cancel</Text>
-              </View>
-            </TouchableOpacity>
-          </View>
-        </Pressable>
-      </Modal>
-
-      {/* Location Modal */}
-      <Modal
-        visible={isLocationModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setIsLocationModalVisible(false)}
-      >
-        <Pressable style={styles.modalOverlay} onPress={() => setIsLocationModalVisible(false)}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>Location & Currency</Text>
-            
-            <View style={styles.locationInfoContainer}>
-              <View style={styles.locationInfoRow}>
-                <Text style={styles.locationInfoLabel}>Current Location:</Text>
-                <Text style={styles.locationInfoValue}>{userCountry || 'Not set'}</Text>
-              </View>
-              <View style={styles.locationInfoRow}>
-                <Text style={styles.locationInfoLabel}>Display Currency:</Text>
-                <Text style={styles.locationInfoValue}>{userCurrency} ({currencySymbol})</Text>
-              </View>
-              {fxRate !== 1 && (
-                <View style={styles.locationInfoRow}>
-                  <Text style={styles.locationInfoLabel}>Exchange Rate:</Text>
-                  <Text style={styles.locationInfoValue}>1 USD = {fxRate.toFixed(4)} {userCurrency}</Text>
-                </View>
-              )}
-              <View style={styles.locationInfoRow}>
-                <Text style={styles.locationInfoLabel}>Permission Status:</Text>
-                <Text style={[styles.locationInfoValue, locationPermission === 'granted' ? styles.permissionGranted : styles.permissionDenied]}>
-                  {locationPermission === 'granted' ? '✓ Granted' : locationPermission === 'denied' ? '✗ Denied' : '⊙ Not Set'}
-                </Text>
-              </View>
-            </View>
-
-            <TouchableOpacity 
-              style={styles.modalOption}
-              onPress={() => {
-                setIsLocationModalVisible(false);
-                handleRequestLocation();
-              }}
-            >
-              <View style={styles.modalOptionIcon}>
-                <Text style={styles.modalOptionEmoji}>📍</Text>
-              </View>
-              <View style={styles.modalOptionText}>
-                <Text style={styles.modalOptionTitle}>Update Location</Text>
-                <Text style={styles.modalOptionSubtitle}>Use GPS to detect your location</Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={[styles.modalOption, { borderBottomWidth: 0 }]}
-              onPress={() => setIsLocationModalVisible(false)}
-            >
-              <View style={styles.modalOptionIcon}>
-                <Text style={styles.modalOptionEmoji}>✖️</Text>
-              </View>
-              <View style={styles.modalOptionText}>
-                <Text style={styles.modalOptionTitle}>Cancel</Text>
-              </View>
-            </TouchableOpacity>
-          </View>
-        </Pressable>
-      </Modal>
-
-      {/* Exchange Modal */}
-      <Modal
-        visible={isExchangeModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setIsExchangeModalVisible(false)}
-      >
-        <Pressable style={styles.modalOverlay} onPress={() => setIsExchangeModalVisible(false)}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>Exchange</Text>
-            
-            <TouchableOpacity 
-              style={styles.modalOption}
-              onPress={handleBuyFunds}
-            >
-              <View style={styles.modalOptionIcon}>
-                <Text style={styles.modalOptionEmoji}>💰</Text>
-              </View>
-              <View style={styles.modalOptionText}>
-                <Text style={styles.modalOptionTitle}>Buy Crypto</Text>
-                <Text style={styles.modalOptionSubtitle}>Add funds to your wallet</Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.modalOption}
-              onPress={handleWithdraw}
-            >
-              <View style={styles.modalOptionIcon}>
-                <Text style={styles.modalOptionEmoji}>🏦</Text>
-              </View>
-              <View style={styles.modalOptionText}>
-                <Text style={styles.modalOptionTitle}>Withdraw</Text>
-                <Text style={styles.modalOptionSubtitle}>Cash out to your bank</Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={[styles.modalOption, { borderBottomWidth: 0 }]}
-              onPress={() => setIsExchangeModalVisible(false)}
-            >
-              <View style={styles.modalOptionIcon}>
-                <Text style={styles.modalOptionEmoji}>✖️</Text>
-              </View>
-              <View style={styles.modalOptionText}>
-                <Text style={styles.modalOptionTitle}>Cancel</Text>
-              </View>
-            </TouchableOpacity>
-          </View>
-        </Pressable>
-      </Modal>
-
-      {/* Ramp Provider Selection Modal */}
-      <Modal
-        visible={selectedRampType !== null && !showWebView}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={closeRamp}
-      >
-        <View style={styles.rampModalContainer}>
-          <View style={styles.rampModalHeader}>
-            <Text style={styles.rampModalTitle}>
-              {selectedRampType === "onramp" ? "Buy Crypto" : "Withdraw to Bank"}
-            </Text>
-            <Pressable style={styles.closeButton} onPress={closeRamp}>
-              <Text style={styles.closeButtonText}>✕</Text>
-            </Pressable>
-          </View>
-
-          <ScrollView style={styles.rampScrollView} showsVerticalScrollIndicator={false}>
-            {/* Provider Selection */}
-            {!selectedProvider && (
-              <>
-                <Text style={styles.rampSectionTitle}>Select Provider</Text>
-                {availableProviders.map((provider) => {
-                  const info = getProviderInfo(provider);
-                  const canUse = selectedRampType === "onramp" ? info.supportsBuy : info.supportsSell;
-                  
-                  if (!canUse) return null;
-
-                  return (
-                    <TouchableOpacity
-                      key={provider}
-                      style={styles.rampProviderCard}
-                      onPress={() => handleProviderSelect(provider)}
-                    >
-                      <View style={styles.rampProviderHeader}>
-                        <Text style={styles.rampProviderLogo}>{info.logo}</Text>
-                        <Text style={styles.rampProviderName}>{info.name}</Text>
+                  {displayedPendingTransfers.map((transfer) => {
+                    const isClaimingThis =
+                      claimTransferMutation.isPending && claimTransferMutation.variables === transfer.transferId;
+                    return (
+                      <View key={transfer.transferId} style={styles.pendingRow}>
+                        <View style={styles.pendingInfo}>
+                          <Text style={styles.pendingAmount}>
+                            {transfer.amount} {transfer.token}
+                          </Text>
+                          <Text style={styles.pendingMeta}>from {transfer.senderName || transfer.senderEmail}</Text>
+                          <Text style={styles.pendingMeta}>Expires in {getDaysRemaining(transfer)} days</Text>
+                          <TouchableOpacity
+                            onPress={() => navigation.navigate("Claim", { transferId: transfer.transferId })}
+                            style={styles.pendingLinkButton}
+                          >
+                            <Text style={styles.pendingLinkText}>Open manual claim screen</Text>
+                          </TouchableOpacity>
+                        </View>
+                        <TouchableOpacity
+                          style={[
+                            styles.pendingClaimButton,
+                            (isClaimingThis || claimAllMutation.isPending) && styles.pendingClaimButtonDisabled,
+                          ]}
+                          onPress={() => handleManualClaim(transfer)}
+                          disabled={isClaimingThis || claimAllMutation.isPending}
+                        >
+                          {isClaimingThis ? (
+                            <ActivityIndicator size="small" color="#FFFFFF" />
+                          ) : (
+                            <Text style={styles.pendingClaimButtonText}>Claim</Text>
+                          )}
+                        </TouchableOpacity>
                       </View>
-                      <Text style={styles.rampProviderDescription}>{info.description}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </>
-            )}
+                    );
+                  })}
 
-            {/* Payment Method Selection (Coinbase only) */}
-            {selectedProvider === "coinbase" && (
-              <>
-                <Pressable style={styles.backButton} onPress={() => setSelectedProvider(null)}>
-                  <Text style={styles.backButtonText}>← Back to providers</Text>
-                </Pressable>
-                
-                <Text style={styles.rampSectionTitle}>Select Payment Method</Text>
-                
-                {loadingPaymentMethods ? (
-                  <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color={colors.primary} />
-                    <Text style={styles.loadingText}>Loading payment methods...</Text>
+                  {pendingClaimables.length > displayedPendingTransfers.length && (
+                    <Text style={styles.pendingMeta}>
+                      +{pendingClaimables.length - displayedPendingTransfers.length} more pending transfer
+                      {pendingClaimables.length - displayedPendingTransfers.length > 1 ? "s" : ""}
+                    </Text>
+                  )}
+
+                  <TouchableOpacity
+                    style={[
+                      styles.claimAllButton,
+                      claimAllMutation.isPending && styles.pendingClaimButtonDisabled,
+                    ]}
+                    onPress={handleManualClaimAll}
+                    disabled={claimAllMutation.isPending}
+                  >
+                    {claimAllMutation.isPending ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.claimAllButtonText}>Claim everything automatically</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              <View style={styles.quickActions}>
+
+                <TouchableOpacity style={styles.actionCard} onPress={handleBuyFunds}>
+                  <View style={styles.actionIconContainer}>
+                    <Text style={styles.actionIcon}>💳</Text>
                   </View>
-                ) : availablePaymentMethods.length > 0 ? (
-                  availablePaymentMethods.map((method) => (
-                    <TouchableOpacity
-                      key={method}
-                      style={styles.rampProviderCard}
-                      onPress={() => handlePaymentMethodSelect(method)}
-                    >
-                      <Text style={styles.rampProviderName}>{getPaymentMethodName(method)}</Text>
-                      <Text style={styles.rampProviderDescription}>{getPaymentMethodDescription(method)}</Text>
-                    </TouchableOpacity>
-                  ))
-                ) : (
-                  <Text style={styles.emptyText}>No payment methods available for your region</Text>
-                )}
-              </>
-            )}
-          </ScrollView>
-        </View>
-      </Modal>
+                  <Text style={styles.actionLabel}>Add Funds</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.actionCard} onPress={handleWithdraw}>
+                  <View style={styles.actionIconContainer}>
+                    <Text style={styles.actionIcon}>💰</Text>
+                  </View>
+                  <Text style={styles.actionLabel}>Withdraw</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.actionCard} onPress={() => setIsMoreFeaturesModalVisible(true)}>
+                  <View style={styles.actionIconContainer}>
+                    <Text style={styles.actionIcon}>✨</Text>
+                  </View>
+                  <Text style={styles.actionLabel}>More</Text>
+                </TouchableOpacity>
+              </View>
 
-      {/* In-App WebView Modal for Ramp */}
-      <Modal
-        visible={showWebView}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={closeRamp}
-      >
-        <View style={styles.webViewModalContainer}>
-          <View style={styles.webViewModalHeader}>
-            <Text style={styles.webViewModalTitle}>
-              {selectedProvider && getProviderInfo(selectedProvider).name}
-            </Text>
-            <Pressable style={styles.closeButton} onPress={closeRamp}>
-              <Text style={styles.closeButtonText}>✕</Text>
-            </Pressable>
-          </View>
-          
-          {webViewLoading && (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={colors.primary} />
-              <Text style={styles.loadingText}>Loading...</Text>
+              <View style={styles.sectionHeader}>
+                <View style={styles.sectionTitleRow}>
+                  <View>
+                    <Text style={styles.sectionTitle}>Recent Activity</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => navigation.navigate('TransactionHistory')}>
+                    <Text style={styles.seeAllText}>See All</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <FlatList
+                data={hasBaseWallet ? activities.slice(0, 5) : []}
+                keyExtractor={(item, index) => `${item.type}-${item.type === "app-transfer" ? item.data.id : item.data.hash}-${index}`}
+                renderItem={renderActivity}
+                style={styles.list}
+                contentContainerStyle={styles.listContentHome}
+                ListEmptyComponent={
+                  <Text style={styles.emptyState}>
+                    {!hasBaseWallet
+                      ? "Connect your wallet to view transactions"
+                      : isLoading || loadingBlockchainTxs
+                        ? "Loading transactions..."
+                        : "No transactions yet"}
+                  </Text>
+                }
+              />
+
+            </>
+          )}
+
+          {isSendOptionsVisible && (
+            <View style={styles.inlineSendOverlay} pointerEvents="box-none">
+              <Pressable style={styles.inlineSendBackdrop} onPress={handleCloseSendOptions} />
+              <View style={styles.inlineSendSheet} accessibilityLabel="Send options">
+                <Text style={styles.inlineSendTitle}>Choose how to send</Text>
+                <Text style={styles.inlineSendSubtitle}>
+                  Pick MetaSend email delivery or route funds to a global payout provider.
+                </Text>
+
+                <TouchableOpacity style={styles.inlineSendButton} onPress={handleSendViaEmail}>
+                  <View style={styles.inlineSendButtonCopy}>
+                    <Text style={styles.inlineSendButtonTitle}>Send via email</Text>
+                    <Text style={styles.inlineSendButtonSubtitle}>
+                      Resolve wallets automatically and keep funds pending for new recipients.
+                    </Text>
+                  </View>
+                  <Text style={styles.inlineSendBadge}>MetaSend</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.inlineSendButton} onPress={handleInternationalTransfer}>
+                  <View style={styles.inlineSendButtonCopy}>
+                    <Text style={styles.inlineSendButtonTitle}>International transfer</Text>
+                    <Text style={styles.inlineSendButtonSubtitle}>
+                      Bank, mobile money, and card payouts via Coinbase, MoonPay, Transak & more.
+                    </Text>
+                  </View>
+                  <Text style={styles.inlineSendBadge}>New</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.inlineSendDismiss} onPress={handleCloseSendOptions}>
+                  <Text style={styles.inlineSendDismissText}>Dismiss</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
-          
-          {profile?.walletAddress && selectedProvider && selectedRampType && (
-            <WebView
-              source={{ uri: buildRampUrl({
-                provider: selectedProvider,
-                type: selectedRampType,
-                walletAddress: profile.walletAddress,
-                assetSymbol: "USDC",
-                destinationNetwork: "base",
-                paymentMethod: selectedPaymentMethod ?? undefined,
-              }) }}
-              style={styles.webView}
-              onLoadStart={() => setWebViewLoading(true)}
-              onLoadEnd={() => setWebViewLoading(false)}
-              onError={(syntheticEvent) => {
-                const { nativeEvent } = syntheticEvent;
-                console.error("WebView error:", nativeEvent);
-                setWebViewLoading(false);
-              }}
-            />
-          )}
-        </View>
-      </Modal>
 
-      {/* Currency Selector Modal */}
-      <Modal
-        visible={isCurrencySelectorVisible}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setIsCurrencySelectorVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.rampModalHeader}>
-              <Text style={styles.rampModalTitle}>Select Display Currency</Text>
-              <Pressable onPress={() => setIsCurrencySelectorVisible(false)} style={styles.closeButton}>
-                <Text style={styles.closeButtonText}>✕</Text>
-              </Pressable>
-            </View>
-            
-            <ScrollView style={styles.currencyList} showsVerticalScrollIndicator={false}>
-              {popularCurrencies.map((curr) => (
+          {/* More Features Modal */}
+          <Modal
+            visible={isMoreFeaturesModalVisible}
+            transparent
+            animationType="slide"
+            onRequestClose={() => setIsMoreFeaturesModalVisible(false)}
+          >
+            <Pressable style={styles.modalOverlay} onPress={() => setIsMoreFeaturesModalVisible(false)}>
+              <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
+                <View style={styles.modalHandle} />
+                <Text style={styles.modalTitle}>More Features</Text>
+
                 <TouchableOpacity
-                  key={curr.currency}
-                  style={[
-                    styles.currencyOption,
-                    userCurrency === curr.currency && styles.currencyOptionActive
-                  ]}
-                  onPress={() => handleCurrencySelect(curr)}
-                  activeOpacity={0.7}
+                  style={styles.modalOption}
+                  onPress={() => {
+                    setIsMoreFeaturesModalVisible(false);
+                    navigation.navigate('Tipping');
+                  }}
                 >
-                  <View style={styles.currencyInfo}>
-                    <Text style={styles.currencySymbol}>{curr.symbol}</Text>
-                    <View style={styles.currencyDetails}>
-                      <Text style={styles.currencyCode}>{curr.currency}</Text>
-                      <Text style={styles.currencyName}>{curr.name}</Text>
+                  <View style={styles.modalOptionIcon}>
+                    <Text style={styles.modalOptionEmoji}>💸</Text>
+                  </View>
+                  <View style={styles.modalOptionText}>
+                    <Text style={styles.modalOptionTitle}>Micro-Tipping</Text>
+                    <Text style={styles.modalOptionSubtitle}>Send tips to creators</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.modalOption}
+                  onPress={() => {
+                    setIsMoreFeaturesModalVisible(false);
+                    navigation.navigate('PaymentRequests');
+                  }}
+                >
+                  <View style={styles.modalOptionIcon}>
+                    <Text style={styles.modalOptionEmoji}>📧</Text>
+                  </View>
+                  <View style={styles.modalOptionText}>
+                    <Text style={styles.modalOptionTitle}>Payment Requests</Text>
+                    <Text style={styles.modalOptionSubtitle}>Request payments via email</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.modalOption}
+                  onPress={() => {
+                    setIsMoreFeaturesModalVisible(false);
+                    navigation.navigate('Invoices');
+                  }}
+                >
+                  <View style={styles.modalOptionIcon}>
+                    <Text style={styles.modalOptionEmoji}>📄</Text>
+                  </View>
+                  <View style={styles.modalOptionText}>
+                    <Text style={styles.modalOptionTitle}>Invoices</Text>
+                    <Text style={styles.modalOptionSubtitle}>Create professional invoices</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.modalOption}
+                  onPress={() => {
+                    setIsMoreFeaturesModalVisible(false);
+                    navigation.navigate('Gifts');
+                  }}
+                >
+                  <View style={styles.modalOptionIcon}>
+                    <Text style={styles.modalOptionEmoji}>🎁</Text>
+                  </View>
+                  <View style={styles.modalOptionText}>
+                    <Text style={styles.modalOptionTitle}>Crypto Gifts</Text>
+                    <Text style={styles.modalOptionSubtitle}>Send themed crypto gifts</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.modalOption, { borderBottomWidth: 0 }]}
+                  onPress={() => setIsMoreFeaturesModalVisible(false)}
+                >
+                  <View style={styles.modalOptionIcon}>
+                    <Text style={styles.modalOptionEmoji}>✖️</Text>
+                  </View>
+                  <View style={styles.modalOptionText}>
+                    <Text style={styles.modalOptionTitle}>Cancel</Text>
+                  </View>
+                </TouchableOpacity>
+              </Pressable>
+            </Pressable>
+          </Modal>
+
+          {/* Location Modal */}
+          <Modal
+            visible={isLocationModalVisible}
+            transparent
+            animationType="slide"
+            onRequestClose={() => setIsLocationModalVisible(false)}
+          >
+            <Pressable style={styles.modalOverlay} onPress={() => setIsLocationModalVisible(false)}>
+              <View style={styles.modalContent}>
+                <View style={styles.modalHandle} />
+                <Text style={styles.modalTitle}>Location & Currency</Text>
+
+                <View style={styles.locationInfoContainer}>
+                  <View style={styles.locationInfoRow}>
+                    <Text style={styles.locationInfoLabel}>Current Location:</Text>
+                    <Text style={styles.locationInfoValue}>{userCountry || 'Not set'}</Text>
+                  </View>
+                  <View style={styles.locationInfoRow}>
+                    <Text style={styles.locationInfoLabel}>Display Currency:</Text>
+                    <Text style={styles.locationInfoValue}>{userCurrency} ({currencySymbol})</Text>
+                  </View>
+                  {fxRate !== 1 && (
+                    <View style={styles.locationInfoRow}>
+                      <Text style={styles.locationInfoLabel}>Exchange Rate:</Text>
+                      <Text style={styles.locationInfoValue}>1 USD = {fxRate.toFixed(4)} {userCurrency}</Text>
+                    </View>
+                  )}
+                  <View style={styles.locationInfoRow}>
+                    <Text style={styles.locationInfoLabel}>Permission Status:</Text>
+                    <Text style={[styles.locationInfoValue, locationPermission === 'granted' ? styles.permissionGranted : styles.permissionDenied]}>
+                      {locationPermission === 'granted' ? '✓ Granted' : locationPermission === 'denied' ? '✗ Denied' : '⊙ Not Set'}
+                    </Text>
+                  </View>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.modalOption}
+                  onPress={() => {
+                    setIsLocationModalVisible(false);
+                    handleRequestLocation();
+                  }}
+                >
+                  <View style={styles.modalOptionIcon}>
+                    <Text style={styles.modalOptionEmoji}>📍</Text>
+                  </View>
+                  <View style={styles.modalOptionText}>
+                    <Text style={styles.modalOptionTitle}>Update Location</Text>
+                    <Text style={styles.modalOptionSubtitle}>Use GPS to detect your location</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.modalOption, { borderBottomWidth: 0 }]}
+                  onPress={() => setIsLocationModalVisible(false)}
+                >
+                  <View style={styles.modalOptionIcon}>
+                    <Text style={styles.modalOptionEmoji}>✖️</Text>
+                  </View>
+                  <View style={styles.modalOptionText}>
+                    <Text style={styles.modalOptionTitle}>Cancel</Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+            </Pressable>
+          </Modal>
+
+          {/* More Features Modal */}
+
+
+          {/* Location Modal */}
+          <Modal
+            visible={isLocationModalVisible}
+            transparent
+            animationType="slide"
+            onRequestClose={() => setIsLocationModalVisible(false)}
+          >
+            <Pressable style={styles.modalOverlay} onPress={() => setIsLocationModalVisible(false)}>
+              <View style={styles.modalContent}>
+                <View style={styles.modalHandle} />
+                <Text style={styles.modalTitle}>Location & Currency</Text>
+
+                <View style={styles.locationInfoContainer}>
+                  <View style={styles.locationInfoRow}>
+                    <Text style={styles.locationInfoLabel}>Current Location:</Text>
+                    <Text style={styles.locationInfoValue}>{userCountry || 'Not set'}</Text>
+                  </View>
+                  <View style={styles.locationInfoRow}>
+                    <Text style={styles.locationInfoLabel}>Display Currency:</Text>
+                    <Text style={styles.locationInfoValue}>{userCurrency} ({currencySymbol})</Text>
+                  </View>
+                  {fxRate !== 1 && (
+                    <View style={styles.locationInfoRow}>
+                      <Text style={styles.locationInfoLabel}>Exchange Rate:</Text>
+                      <Text style={styles.locationInfoValue}>1 USD = {fxRate.toFixed(4)} {userCurrency}</Text>
+                    </View>
+                  )}
+                  <View style={styles.locationInfoRow}>
+                    <Text style={styles.locationInfoLabel}>Permission Status:</Text>
+                    <Text style={[styles.locationInfoValue, locationPermission === 'granted' ? styles.permissionGranted : styles.permissionDenied]}>
+                      {locationPermission === 'granted' ? '✓ Granted' : locationPermission === 'denied' ? '✗ Denied' : '⊙ Not Set'}
+                    </Text>
+                  </View>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.modalOption}
+                  onPress={() => {
+                    setIsLocationModalVisible(false);
+                    handleRequestLocation();
+                  }}
+                >
+                  <View style={styles.modalOptionIcon}>
+                    <Text style={styles.modalOptionEmoji}>📍</Text>
+                  </View>
+                  <View style={styles.modalOptionText}>
+                    <Text style={styles.modalOptionTitle}>Update Location</Text>
+                    <Text style={styles.modalOptionSubtitle}>Use GPS to detect your location</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.modalOption, { borderBottomWidth: 0 }]}
+                  onPress={() => setIsLocationModalVisible(false)}
+                >
+                  <View style={styles.modalOptionIcon}>
+                    <Text style={styles.modalOptionEmoji}>✖️</Text>
+                  </View>
+                  <View style={styles.modalOptionText}>
+                    <Text style={styles.modalOptionTitle}>Cancel</Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+            </Pressable>
+          </Modal>
+
+
+
+          {/* Ramp Provider Selection Modal */}
+          <Modal
+            visible={selectedRampType !== null && !showWebView}
+            animationType="slide"
+            presentationStyle="pageSheet"
+            onRequestClose={closeRamp}
+          >
+            <View style={styles.rampModalContainer}>
+              <View style={styles.rampModalHeader}>
+                <Text style={styles.rampModalTitle}>
+                  {selectedRampType === "onramp" ? "Buy Crypto" : "Withdraw to Bank"}
+                </Text>
+                <Pressable style={styles.closeButton} onPress={closeRamp}>
+                  <Text style={styles.closeButtonText}>✕</Text>
+                </Pressable>
+              </View>
+
+              <ScrollView style={styles.rampScrollView} showsVerticalScrollIndicator={false}>
+                {/* Provider Selection */}
+                {!selectedProvider && (
+                  <>
+                    <Text style={styles.rampSectionTitle}>Select Provider</Text>
+                    {availableProviders.map((provider) => {
+                      const info = getProviderInfo(provider);
+                      const canUse = selectedRampType === "onramp" ? info.supportsBuy : info.supportsSell;
+
+                      if (!canUse) return null;
+
+                      return (
+                        <TouchableOpacity
+                          key={provider}
+                          style={styles.rampProviderCard}
+                          onPress={() => handleProviderSelect(provider)}
+                        >
+                          <View style={styles.rampProviderHeader}>
+                            <Text style={styles.rampProviderLogo}>{info.logo}</Text>
+                            <Text style={styles.rampProviderName}>{info.name}</Text>
+                          </View>
+                          <Text style={styles.rampProviderDescription}>{info.description}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </>
+                )}
+
+                {/* Payment Method Selection (Coinbase only) */}
+                {selectedProvider === "coinbase" && (
+                  <>
+                    <Pressable style={styles.backButton} onPress={() => setSelectedProvider(null)}>
+                      <Text style={styles.backButtonText}>← Back to providers</Text>
+                    </Pressable>
+
+                    <Text style={styles.rampSectionTitle}>Select Payment Method</Text>
+
+                    {loadingPaymentMethods ? (
+                      <View style={styles.loadingContainer}>
+                        <ActivityIndicator size="large" color={colors.primary} />
+                        <Text style={styles.loadingText}>Loading payment methods...</Text>
+                      </View>
+                    ) : availablePaymentMethods.length > 0 ? (
+                      availablePaymentMethods.map((method) => (
+                        <TouchableOpacity
+                          key={method}
+                          style={styles.rampProviderCard}
+                          onPress={() => handlePaymentMethodSelect(method)}
+                        >
+                          <Text style={styles.rampProviderName}>{getPaymentMethodName(method)}</Text>
+                          <Text style={styles.rampProviderDescription}>{getPaymentMethodDescription(method)}</Text>
+                        </TouchableOpacity>
+                      ))
+                    ) : (
+                      <Text style={styles.emptyText}>No payment methods available for your region</Text>
+                    )}
+                  </>
+                )}
+              </ScrollView>
+            </View>
+          </Modal>
+
+          {/* In-App WebView Modal for Ramp */}
+          <Modal
+            visible={showWebView}
+            animationType="slide"
+            presentationStyle="fullScreen"
+            onRequestClose={closeRamp}
+          >
+            <View style={styles.webViewModalContainer}>
+              <View style={styles.webViewModalHeader}>
+                <Text style={styles.webViewModalTitle}>
+                  {selectedProvider && getProviderInfo(selectedProvider).name}
+                </Text>
+                <Pressable style={styles.closeButton} onPress={closeRamp}>
+                  <Text style={styles.closeButtonText}>✕</Text>
+                </Pressable>
+              </View>
+
+              {webViewLoading && (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color={colors.primary} />
+                  <Text style={styles.loadingText}>Loading...</Text>
+                </View>
+              )}
+
+              {profile?.walletAddress && selectedProvider && selectedRampType && (
+                <WebView
+                  source={{
+                    uri: buildRampUrl({
+                      provider: selectedProvider,
+                      type: selectedRampType,
+                      walletAddress: profile.walletAddress,
+                      assetSymbol: "USDC",
+                      destinationNetwork: "base",
+                      paymentMethod: selectedPaymentMethod ?? undefined,
+                    })
+                  }}
+                  style={styles.webView}
+                  onLoadStart={() => setWebViewLoading(true)}
+                  onLoadEnd={() => setWebViewLoading(false)}
+                  onError={(syntheticEvent) => {
+                    const { nativeEvent } = syntheticEvent;
+                    console.error("WebView error:", nativeEvent);
+                    setWebViewLoading(false);
+                  }}
+                />
+              )}
+            </View>
+          </Modal>
+
+          {/* Currency Selector Modal */}
+          <Modal
+            visible={isCurrencySelectorVisible}
+            animationType="slide"
+            transparent={true}
+            onRequestClose={() => setIsCurrencySelectorVisible(false)}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <View style={styles.rampModalHeader}>
+                  <Text style={styles.rampModalTitle}>Select Display Currency</Text>
+                  <Pressable onPress={() => setIsCurrencySelectorVisible(false)} style={styles.closeButton}>
+                    <Text style={styles.closeButtonText}>✕</Text>
+                  </Pressable>
+                </View>
+
+                <ScrollView style={styles.currencyList} showsVerticalScrollIndicator={false}>
+                  {popularCurrencies.map((curr) => (
+                    <TouchableOpacity
+                      key={curr.currency}
+                      style={[
+                        styles.currencyOption,
+                        userCurrency === curr.currency && styles.currencyOptionActive
+                      ]}
+                      onPress={() => handleCurrencySelect(curr)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.currencyInfo}>
+                        <Text style={styles.currencySymbol}>{curr.symbol}</Text>
+                        <View style={styles.currencyDetails}>
+                          <Text style={styles.currencyCode}>{curr.currency}</Text>
+                          <Text style={styles.currencyName}>{curr.name}</Text>
+                        </View>
+                      </View>
+                      {userCurrency === curr.currency && (
+                        <Text style={styles.currencyCheckmark}>✓</Text>
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            </View>
+          </Modal>
+
+          {/* Settings Screen */}
+          {activeTab === "settings" && (
+            <View style={styles.settingsContainer}>
+              <ScrollView style={styles.settingsScroll} showsVerticalScrollIndicator={false}>
+                <View style={styles.settingsSection}>
+                  <Text style={styles.settingsSectionTitle}>Appearance</Text>
+
+                  <View style={styles.settingRow}>
+                    <View style={styles.settingInfo}>
+                      <Text style={styles.settingTitle}>Theme</Text>
+                      <Text style={styles.settingDescription}>Choose your preferred theme</Text>
                     </View>
                   </View>
-                  {userCurrency === curr.currency && (
-                    <Text style={styles.currencyCheckmark}>✓</Text>
+
+                  <View style={styles.themeSelector}>
+                    <TouchableOpacity
+                      style={[styles.themeOption, scheme === "light" && styles.themeOptionActive]}
+                      onPress={() => setScheme("light")}
+                    >
+                      <Text style={styles.themeOptionIcon}>☀️</Text>
+                      <Text style={[styles.themeOptionText, scheme === "light" && styles.themeOptionTextActive]}>Light</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.themeOption, scheme === "dark" && styles.themeOptionActive]}
+                      onPress={() => setScheme("dark")}
+                    >
+                      <Text style={styles.themeOptionIcon}>🌙</Text>
+                      <Text style={[styles.themeOptionText, scheme === "dark" && styles.themeOptionTextActive]}>Dark</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <View style={styles.settingsSection}>
+                  <Text style={styles.settingsSectionTitle}>Location</Text>
+
+                  <View style={styles.settingRow}>
+                    <View style={styles.settingInfo}>
+                      <Text style={styles.settingTitle}>Location Access</Text>
+                      <Text style={styles.settingDescription}>
+                        {locationPermission === 'granted'
+                          ? `Enabled - ${userCountry || 'Detecting...'}`
+                          : locationPermission === 'denied'
+                            ? 'Denied - Limited payment options'
+                            : 'Not enabled - Using device locale'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.settingRow}
+                    onPress={() => setIsCurrencySelectorVisible(true)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.settingInfo}>
+                      <Text style={styles.settingTitle}>Display Currency</Text>
+                      <Text style={styles.settingDescription}>
+                        {userCurrency} ({currencySymbol})
+                      </Text>
+                    </View>
+                    <Text style={styles.settingArrow}>→</Text>
+                  </TouchableOpacity>
+
+                  {locationPermission !== 'granted' && (
+                    <TouchableOpacity
+                      style={styles.locationButton}
+                      onPress={handleRequestLocation}
+                    >
+                      <Text style={styles.locationButtonText}>Enable Location Access</Text>
+                      <Text style={styles.locationButtonSubtext}>
+                        Get accurate currency and access to region-specific payment providers
+                      </Text>
+                    </TouchableOpacity>
                   )}
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+                </View>
+
+                <View style={styles.settingsSection}>
+                  <Text style={styles.settingsSectionTitle}>Account</Text>
+
+                  <View style={styles.settingRow}>
+                    <View style={styles.settingInfo}>
+                      <Text style={styles.settingTitle}>Email</Text>
+                      <Text style={styles.settingDescription}>{profile?.email ?? "Not set"}</Text>
+                    </View>
+                  </View>
+
+                  <TouchableOpacity style={styles.settingRow} onPress={copyWalletAddress} activeOpacity={0.7}>
+                    <View style={styles.settingInfo}>
+                      <Text style={styles.settingTitle}>Wallet Address</Text>
+                      <Text style={styles.settingDescription}>{profile?.walletAddress ? formatShortAddress(profile.walletAddress) : "Not connected"}</Text>
+                    </View>
+                    {profile?.walletAddress && <Text style={styles.settingCopy}>📋</Text>}
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.settingsSection}>
+                  <TouchableOpacity style={styles.settingRow} onPress={disconnect}>
+                    <View style={styles.settingInfo}>
+                      <Text style={[styles.settingTitle, { color: "#EF4444" }]}>Sign Out</Text>
+                    </View>
+                    <Text style={styles.settingArrow}>→</Text>
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+            </View>
+          )}
+
+          {/* Bottom Tab Navigation */}
+          <View style={styles.tabBar}>
+            <TouchableOpacity
+              style={styles.tabItem}
+              onPress={() => setActiveTab("home")}
+            >
+              <View style={[styles.tabIconContainer, activeTab === "home" && styles.tabIconContainerActive]}>
+                <Text style={[styles.tabIcon, activeTab === "home" && styles.tabIconActive]}>💳</Text>
+              </View>
+              <Text style={[styles.tabLabel, activeTab === "home" && styles.tabLabelActive]}>Wallet</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.tabItem}
+              onPress={handleOpenSendOptions}
+            >
+              <View style={[styles.tabIconContainer, isSendOptionsVisible && styles.tabIconContainerActive]}>
+                <Text style={[styles.tabIcon, isSendOptionsVisible && styles.tabIconActive]}>📤</Text>
+              </View>
+              <Text style={[styles.tabLabel, isSendOptionsVisible && styles.tabLabelActive]}>Send</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.tabItem}
+              onPress={() => setActiveTab("settings")}
+            >
+              <View style={[styles.tabIconContainer, activeTab === "settings" && styles.tabIconContainerActive]}>
+                <Text style={[styles.tabIcon, activeTab === "settings" && styles.tabIconActive]}>⚙️</Text>
+              </View>
+              <Text style={[styles.tabLabel, activeTab === "settings" && styles.tabLabelActive]}>Settings</Text>
+            </TouchableOpacity>
           </View>
         </View>
-      </Modal>
 
-      {/* Settings Screen */}
-      {activeTab === "settings" && (
-        <View style={styles.settingsContainer}>
-          <ScrollView style={styles.settingsScroll} showsVerticalScrollIndicator={false}>
-            <View style={styles.settingsSection}>
-              <Text style={styles.settingsSectionTitle}>Appearance</Text>
-              
-              <View style={styles.settingRow}>
-                <View style={styles.settingInfo}>
-                  <Text style={styles.settingTitle}>Theme</Text>
-                  <Text style={styles.settingDescription}>Choose your preferred theme</Text>
-                </View>
-              </View>
-              
-              <View style={styles.themeSelector}>
-                <TouchableOpacity
-                  style={[styles.themeOption, scheme === "light" && styles.themeOptionActive]}
-                  onPress={() => setScheme("light")}
-                >
-                  <Text style={styles.themeOptionIcon}>☀️</Text>
-                  <Text style={[styles.themeOptionText, scheme === "light" && styles.themeOptionTextActive]}>Light</Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity
-                  style={[styles.themeOption, scheme === "dark" && styles.themeOptionActive]}
-                  onPress={() => setScheme("dark")}
-                >
-                  <Text style={styles.themeOptionIcon}>🌙</Text>
-                  <Text style={[styles.themeOptionText, scheme === "dark" && styles.themeOptionTextActive]}>Dark</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+        <Modal
+          visible={isDepositModalVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setIsDepositModalVisible(false)}
+        >
+          <Pressable style={styles.modalOverlay} onPress={() => setIsDepositModalVisible(false)}>
+            <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
+              <View style={styles.modalHandle} />
+              <Text style={styles.modalTitle}>Deposit From</Text>
 
-            <View style={styles.settingsSection}>
-              <Text style={styles.settingsSectionTitle}>Location</Text>
-              
-              <View style={styles.settingRow}>
-                <View style={styles.settingInfo}>
-                  <Text style={styles.settingTitle}>Location Access</Text>
-                  <Text style={styles.settingDescription}>
-                    {locationPermission === 'granted' 
-                      ? `Enabled - ${userCountry || 'Detecting...'}` 
-                      : locationPermission === 'denied'
-                      ? 'Denied - Limited payment options'
-                      : 'Not enabled - Using device locale'}
-                  </Text>
-                </View>
-              </View>
-              
-              <TouchableOpacity 
-                style={styles.settingRow}
-                onPress={() => setIsCurrencySelectorVisible(true)}
-                activeOpacity={0.7}
+              <TouchableOpacity
+                style={styles.modalOption}
+                onPress={() => {
+                  setIsDepositModalVisible(false);
+                  navigation.navigate("Deposit");
+                }}
               >
-                <View style={styles.settingInfo}>
-                  <Text style={styles.settingTitle}>Display Currency</Text>
-                  <Text style={styles.settingDescription}>
-                    {userCurrency} ({currencySymbol})
-                  </Text>
+                <View style={styles.modalOptionIcon}>
+                  <Text style={styles.modalOptionEmoji}>🏦</Text>
+                </View>
+                <View style={styles.modalOptionText}>
+                  <Text style={styles.modalOptionTitle}>Local Payment Method</Text>
+                  <Text style={styles.modalOptionSubtitle}>Bank transfer, Card</Text>
                 </View>
                 <Text style={styles.settingArrow}>→</Text>
               </TouchableOpacity>
-              
-              {locationPermission !== 'granted' && (
-                <TouchableOpacity 
-                  style={styles.locationButton}
-                  onPress={handleRequestLocation}
-                >
-                  <Text style={styles.locationButtonText}>Enable Location Access</Text>
-                  <Text style={styles.locationButtonSubtext}>
-                    Get accurate currency and access to region-specific payment providers
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
 
-            <View style={styles.settingsSection}>
-              <Text style={styles.settingsSectionTitle}>Account</Text>
-              
-              <View style={styles.settingRow}>
-                <View style={styles.settingInfo}>
-                  <Text style={styles.settingTitle}>Email</Text>
-                  <Text style={styles.settingDescription}>{profile?.email ?? "Not set"}</Text>
+              <TouchableOpacity
+                style={styles.modalOption}
+                onPress={() => {
+                  setIsDepositModalVisible(false);
+                  setSelectedRampType("onramp");
+                }}
+              >
+                <View style={styles.modalOptionIcon}>
+                  <Text style={styles.modalOptionEmoji}>👛</Text>
                 </View>
-              </View>
-              
-              <TouchableOpacity style={styles.settingRow} onPress={copyWalletAddress} activeOpacity={0.7}>
-                <View style={styles.settingInfo}>
-                  <Text style={styles.settingTitle}>Wallet Address</Text>
-                  <Text style={styles.settingDescription}>{profile?.walletAddress ? formatShortAddress(profile.walletAddress) : "Not connected"}</Text>
-                </View>
-                {profile?.walletAddress && <Text style={styles.settingCopy}>📋</Text>}
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.settingsSection}>
-              <TouchableOpacity style={styles.settingRow} onPress={disconnect}>
-                <View style={styles.settingInfo}>
-                  <Text style={[styles.settingTitle, { color: "#EF4444" }]}>Sign Out</Text>
+                <View style={styles.modalOptionText}>
+                  <Text style={styles.modalOptionTitle}>Wallet or Exchange</Text>
+                  <Text style={styles.modalOptionSubtitle}>Transfer from another wallet</Text>
                 </View>
                 <Text style={styles.settingArrow}>→</Text>
               </TouchableOpacity>
-            </View>
-          </ScrollView>
-        </View>
-      )}
 
-      {/* Bottom Tab Navigation */}
-      <View style={styles.tabBar}>
-        <TouchableOpacity
-          style={styles.tabItem}
-          onPress={() => setActiveTab("home")}
-        >
-          <View style={[styles.tabIconContainer, activeTab === "home" && styles.tabIconContainerActive]}>
-            <Text style={[styles.tabIcon, activeTab === "home" && styles.tabIconActive]}>🏠</Text>
-          </View>
-          <Text style={[styles.tabLabel, activeTab === "home" && styles.tabLabelActive]}>Home</Text>
-        </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalOption}
+                onPress={() => {
+                  Alert.alert("Coming Soon", "ACH Bank Transfer is coming soon!");
+                }}
+              >
+                <View style={styles.modalOptionIcon}>
+                  <Text style={styles.modalOptionEmoji}>🏛️</Text>
+                </View>
+                <View style={styles.modalOptionText}>
+                  <Text style={styles.modalOptionTitle}>ACH Bank Transfer</Text>
+                  <Text style={styles.modalOptionSubtitle}>US/Canada Users</Text>
+                </View>
+                <Text style={styles.settingArrow}>→</Text>
+              </TouchableOpacity>
+            </Pressable>
+          </Pressable>
+        </Modal>
 
-        <TouchableOpacity
-          style={styles.tabItemCenter}
-          onPress={() => setIsExchangeModalVisible(true)}
+        <Modal
+          visible={isWithdrawModalVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setIsWithdrawModalVisible(false)}
         >
-          <View style={styles.centerTabButton}>
-            <Text style={styles.centerTabIcon}>+</Text>
-          </View>
-        </TouchableOpacity>
+          <Pressable style={styles.modalOverlay} onPress={() => setIsWithdrawModalVisible(false)}>
+            <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
+              <View style={styles.modalHandle} />
+              <Text style={styles.modalTitle}>Withdraw</Text>
 
-        <TouchableOpacity
-          style={styles.tabItem}
-          onPress={() => setActiveTab("settings")}
-        >
-          <View style={[styles.tabIconContainer, activeTab === "settings" && styles.tabIconContainerActive]}>
-            <Text style={[styles.tabIcon, activeTab === "settings" && styles.tabIconActive]}>⚙️</Text>
-          </View>
-          <Text style={[styles.tabLabel, activeTab === "settings" && styles.tabLabelActive]}>Settings</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-      <ToastModal
-        visible={toast.visible}
-        message={toast.message}
-        type={toast.type}
-        onDismiss={hideToast}
-      />
+              <TouchableOpacity
+                style={styles.modalOption}
+                onPress={() => {
+                  setIsWithdrawModalVisible(false);
+                  navigation.navigate("Withdraw");
+                }}
+              >
+                <View style={styles.modalOptionIcon}>
+                  <Text style={styles.modalOptionEmoji}>🏦</Text>
+                </View>
+                <View style={styles.modalOptionText}>
+                  <Text style={styles.modalOptionTitle}>Local Payment Method</Text>
+                  <Text style={styles.modalOptionSubtitle}>Bank transfer, Card</Text>
+                </View>
+                <Text style={styles.settingArrow}>→</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.modalOption}
+                onPress={() => {
+                  setIsWithdrawModalVisible(false);
+                  setSelectedRampType("offramp");
+                }}
+              >
+                <View style={styles.modalOptionIcon}>
+                  <Text style={styles.modalOptionEmoji}>👛</Text>
+                </View>
+                <View style={styles.modalOptionText}>
+                  <Text style={styles.modalOptionTitle}>Exchange/Wallet</Text>
+                  <Text style={styles.modalOptionSubtitle}>Transfer to another wallet</Text>
+                </View>
+                <Text style={styles.settingArrow}>→</Text>
+              </TouchableOpacity>
+            </Pressable>
+          </Pressable>
+        </Modal>
+
+        <ToastModal
+          visible={toast.visible}
+          message={toast.message}
+          type={toast.type}
+          onDismiss={hideToast}
+        />
+      </SafeAreaView>
     </>
   );
 };
 
 const createStyles = (colors: ColorPalette) =>
   StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
     container: {
       flex: 1,
       backgroundColor: colors.background,
     },
     heroCard: {
-      backgroundColor: colors.cardBackground,
+      backgroundColor: colors.primary,
       borderRadius: 28,
       padding: spacing.xl,
       marginHorizontal: spacing.lg,
-      marginTop: spacing.lg,
+      marginTop: 64, // bring card further down
       marginBottom: spacing.md,
       shadowColor: colors.primary,
       shadowOffset: { width: 0, height: 8 },
@@ -1590,12 +1538,12 @@ const createStyles = (colors: ColorPalette) =>
     },
     greeting: {
       ...typography.body,
-      color: colors.textSecondary,
+      color: "#003366",
       fontSize: 14,
     },
     username: {
       ...typography.subtitle,
-      color: colors.textPrimary,
+      color: "#003366",
       fontSize: 18,
       fontWeight: "600",
     },
@@ -1605,30 +1553,30 @@ const createStyles = (colors: ColorPalette) =>
     },
     balanceLabel: {
       ...typography.body,
-      color: colors.textSecondary,
+      color: "#003366",
       fontSize: 14,
       marginBottom: spacing.xs,
     },
     balanceAmount: {
       fontSize: 48,
       fontWeight: "800",
-      color: colors.textPrimary,
+      color: "#003366",
       marginBottom: spacing.xs,
       letterSpacing: -1,
     },
     balanceSubtext: {
       ...typography.body,
-      color: colors.textSecondary,
+      color: "#003366",
       fontSize: 13,
     },
     walletLabel: {
       ...typography.body,
-      color: colors.textSecondary,
+      color: "#003366",
       fontSize: 13,
     },
     walletAddress: {
       ...typography.body,
-      color: colors.textPrimary,
+      color: "#003366",
       fontFamily: "monospace",
       fontSize: 13,
     },
@@ -1636,12 +1584,12 @@ const createStyles = (colors: ColorPalette) =>
       flexDirection: "row",
       justifyContent: "space-between",
       alignItems: "center",
-      backgroundColor: `${colors.primary}12`,
+      backgroundColor: "rgba(255, 255, 255, 0.2)",
       paddingHorizontal: spacing.md,
       paddingVertical: spacing.md,
       borderRadius: 16,
       borderWidth: 1,
-      borderColor: `${colors.primary}30`,
+      borderColor: "rgba(255, 255, 255, 0.3)",
     },
     quickActions: {
       flexDirection: "row",
@@ -1999,8 +1947,6 @@ const createStyles = (colors: ColorPalette) =>
       alignItems: "center",
       paddingHorizontal: spacing.lg,
       paddingVertical: spacing.lg,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
       backgroundColor: colors.cardBackground,
     },
     rampModalTitle: {
@@ -2132,10 +2078,8 @@ const createStyles = (colors: ColorPalette) =>
       height: 80,
       flexDirection: "row",
       backgroundColor: colors.cardBackground,
-      borderTopWidth: 1,
-      borderTopColor: colors.border,
-      paddingBottom: spacing.sm,
-      paddingTop: spacing.sm,
+      paddingBottom: spacing.lg,
+      paddingTop: spacing.xs,
       shadowColor: "#000",
       shadowOffset: { width: 0, height: -4 },
       shadowOpacity: 0.1,
@@ -2181,28 +2125,7 @@ const createStyles = (colors: ColorPalette) =>
       color: colors.primary,
       fontWeight: "600",
     },
-    centerTabButton: {
-      width: 64,
-      height: 64,
-      borderRadius: 32,
-      backgroundColor: colors.primary,
-      alignItems: "center",
-      justifyContent: "center",
-      shadowColor: colors.primary,
-      shadowOffset: { width: 0, height: 8 },
-      shadowOpacity: 0.5,
-      shadowRadius: 20,
-      elevation: 16,
-      marginTop: -32,
-      borderWidth: 4,
-      borderColor: colors.background,
-    },
-    centerTabIcon: {
-      fontSize: 36,
-      fontWeight: "300",
-      color: "#FFFFFF",
-      lineHeight: 36,
-    },
+
     // Settings Screen Styles
     settingsContainer: {
       flex: 1,
@@ -2214,8 +2137,6 @@ const createStyles = (colors: ColorPalette) =>
     settingsSection: {
       paddingHorizontal: spacing.lg,
       paddingVertical: spacing.lg,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
     },
     settingsSectionTitle: {
       ...typography.subtitle,

@@ -37,7 +37,7 @@ async function apiRequest<T>(
   options: RequestInit = {}
 ): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
-  
+
   const headers = {
     "Content-Type": "application/json",
     Authorization: `Bearer ${API_KEY}`,
@@ -45,7 +45,7 @@ async function apiRequest<T>(
   };
 
   console.log(`📡 API Request: ${endpoint}`, { url, method: options.method || 'GET' });
-  
+
   try {
     const response = await fetch(url, {
       ...options,
@@ -93,9 +93,7 @@ export interface UserProfile {
   email: string;
   emailVerified: boolean;
   wallets: {
-    evm?: string;
-    solana?: string;
-    tron?: string;
+    base?: string;
   };
   profile: {
     displayName?: string;
@@ -160,12 +158,12 @@ export async function searchUsersByEmail(
   interface SearchResponse extends ApiResponse<UserProfile[]> {
     users: UserProfile[];
   }
-  
+
   const response = await apiRequest<SearchResponse>(
     `/api/users?search=${encodeURIComponent(search)}&limit=${limit}`,
     { method: "GET" }
   );
-  
+
   return response.users;
 }
 
@@ -214,12 +212,12 @@ export async function getPendingTransfers(
   interface PendingTransfersResponse extends ApiResponse<PendingTransferSummary[]> {
     transfers: PendingTransferSummary[];
   }
-  
+
   const response = await apiRequest<PendingTransfersResponse>(
     `/api/pending-transfers?recipientEmail=${encodeURIComponent(recipientEmail)}`,
     { method: "GET" }
   );
-  
+
   return response.transfers;
 }
 
@@ -232,12 +230,12 @@ export async function getSentPendingTransfers(
   interface PendingTransfersResponse extends ApiResponse<PendingTransferSummary[]> {
     transfers: PendingTransferSummary[];
   }
-  
+
   const response = await apiRequest<PendingTransfersResponse>(
     `/api/pending-transfers?senderUserId=${encodeURIComponent(senderUserId)}`,
     { method: "GET" }
   );
-  
+
   return response.transfers;
 }
 
@@ -250,12 +248,12 @@ export async function getTransferDetails(
   interface TransferDetailsResponse extends ApiResponse<PendingTransferDetails> {
     transfer: PendingTransferDetails;
   }
-  
+
   const response = await apiRequest<TransferDetailsResponse>(
     `/api/pending-transfers?transferId=${encodeURIComponent(transferId)}`,
     { method: "GET" }
   );
-  
+
   return response.transfer;
 }
 
@@ -269,7 +267,7 @@ export async function claimPendingTransfer(
   interface ClaimResponse extends ApiResponse<string> {
     claimTransactionHash: string;
   }
-  
+
   const response = await apiRequest<ClaimResponse>(
     `/api/pending-transfers`,
     {
@@ -281,7 +279,7 @@ export async function claimPendingTransfer(
       }),
     }
   );
-  
+
   return response.claimTransactionHash;
 }
 
@@ -318,7 +316,7 @@ export async function cancelPendingTransfer(
   interface CancelResponse extends ApiResponse<string> {
     refundTransactionHash: string;
   }
-  
+
   const response = await apiRequest<CancelResponse>(
     `/api/pending-transfers`,
     {
@@ -330,7 +328,7 @@ export async function cancelPendingTransfer(
       }),
     }
   );
-  
+
   return response.refundTransactionHash;
 }
 
@@ -356,7 +354,7 @@ export async function createPendingTransfer(
     status?: string;
     message?: string;
   }
-  
+
   const response = await apiRequest<CreateResponse>(
     `/api/pending-transfers`,
     {
@@ -364,7 +362,7 @@ export async function createPendingTransfer(
       body: JSON.stringify(params),
     }
   );
-  
+
   // API returns 202 with processing status, but we'll return a summary
   // The actual transfer object might not be available immediately
   return response.transfer || {

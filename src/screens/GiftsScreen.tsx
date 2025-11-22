@@ -310,7 +310,7 @@ export const GiftsScreen: React.FC<Props> = ({ navigation }) => {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>📦 Transaction History</Text>
+          <Text style={styles.cardTitle}>📦 Recent Activity</Text>
           {isLoadingGifts ? (
             <ActivityIndicator color={colors.primary} />
           ) : allGifts && allGifts.length > 0 ? (

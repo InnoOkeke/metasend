@@ -33,6 +33,8 @@ export type CreateInvoiceInput = z.infer<typeof CreateInvoiceSchema>;
 export type InvoiceSummary = {
   invoiceId: string;
   invoiceNumber: string;
+  creatorEmail: string;
+  creatorName?: string;
   clientEmail: string;
   clientName?: string;
   total: string;

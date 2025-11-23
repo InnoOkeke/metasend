@@ -57,7 +57,7 @@ const toExpirySeconds = (iso: string): number => {
 };
 
 const migrateTransfer = async (transfer: PendingTransfer, dryRun: boolean) => {
-  if (transfer.chain !== "evm") {
+  if (transfer.chain !== "base") {
     console.warn(`Skipping transfer ${transfer.transferId} on unsupported chain ${transfer.chain}`);
     return null;
   }

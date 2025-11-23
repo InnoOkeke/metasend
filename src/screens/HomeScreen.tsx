@@ -32,8 +32,12 @@ import {
   checkLocationPermission,
   requestLocationPermission,
   getUserLocation,
+  getUserLocationFromIP,
   type LocationPermissionStatus,
 } from "../services/location";
+import { useRecentActivity, ActivityItem } from "../hooks/useRecentActivity";
+import { TransactionCard } from "../components/TransactionCard";
+import { TransactionDetailsModal } from "../components/TransactionDetailsModal";
 
 export type HomeScreenProps = NativeStackScreenProps<RootStackParamList, "Home">;
 
@@ -68,6 +72,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   const [fxRate, setFxRate] = useState<number>(1);
   const { scheme, setScheme } = useTheme();
   const { toast, showToast, hideToast } = useToast();
+  const { activities } = useRecentActivity();
+  const [selectedTransaction, setSelectedTransaction] = useState<ActivityItem | null>(null);
+  const [isTransactionModalVisible, setIsTransactionModalVisible] = useState(false);
 
   // Helper function to get currency from country code
   const fetchFxRate = async (currency: string) => {
@@ -150,19 +157,31 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     setIsCurrencySelectorVisible(false);
   };
 
-  // Check location permission on mount
+  // Auto-detect location from IP on mount
   React.useEffect(() => {
-    checkLocationPermission().then(status => {
-      setLocationPermission(status);
-      if (status === 'granted') {
-        getUserLocation().then(loc => {
-          if (loc) {
-            setUserCountry(`${loc.country} (${loc.countryCode})`);
-            const currencyData = getCurrencyFromCountryCode(loc.countryCode);
-            setUserCurrency(currencyData.currency);
-            setCurrencySymbol(currencyData.symbol);
-          }
-        });
+    const initializeLocation = async () => {
+      // Try IP-based location first (no permission needed)
+      let location = null;
+      try {
+        const res = await fetch('https://ipinfo.io/json');
+        const text = await res.text();
+        try {
+          location = JSON.parse(text);
+        } catch (e) {
+          console.error('IP location response was not JSON:', text);
+        }
+      } catch (err) {
+        console.error('Error fetching IP location:', err);
+      }
+
+      // ipinfo.io returns country code as 'country', e.g. 'US'
+      if (location && location.country) {
+        setUserCountry(location.country);
+        setUserCountryCode(location.country);
+        const currencyData = getCurrencyFromCountryCode(location.country);
+        setUserCurrency(currencyData.currency);
+        setCurrencySymbol(currencyData.symbol);
+        await fetchFxRate(currencyData.currency);
       } else {
         // Fallback to device locale
         const locale = Intl.NumberFormat().resolvedOptions().locale;
@@ -173,7 +192,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
           setCurrencySymbol(currencyData.symbol);
         }
       }
-    });
+    };
+
+    initializeLocation();
   }, []);
 
   // Fetch available providers when ramp type changes
@@ -221,27 +242,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     refetchInterval: 10000, // Refetch every 10 seconds
   });
 
-  const { data: transfers, refetch, isLoading, isRefetching } = useQuery({
-    queryKey: ["transfers", profile?.walletAddress],
-    queryFn: () => {
-      if (!profile?.walletAddress || !profile.walletAddress.startsWith("0x")) {
-        throw new Error("Wallet not available");
-      }
-      return listTransfers(profile.walletAddress);
-    },
-    enabled: hasBaseWallet,
-  });
 
-  // Query blockchain transactions
-  const { data: blockchainTxs, refetch: refetchBlockchainTxs, isLoading: loadingBlockchainTxs } = useQuery({
-    queryKey: ["blockchainTransactions", profile?.walletAddress],
-    queryFn: () => {
-      if (!profile?.walletAddress) throw new Error("No wallet");
-      return getUsdcTransactions(profile.walletAddress as `0x${string}`);
-    },
-    enabled: hasBaseWallet,
-    refetchInterval: 15000, // Refetch every 15 seconds
-  });
 
   const {
     data: pendingTransfers = [],
@@ -293,7 +294,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     try {
       await claimTransferMutation.mutateAsync(transfer.transferId);
       showToast(`Claimed ${transfer.amount} ${transfer.token}`, "success");
-      await Promise.all([refetchPendingTransfers(), refetch(), refetchBalance()]);
+      await Promise.all([refetchPendingTransfers(), refetchBalance()]);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to claim transfer";
       showToast(message, "error");
@@ -308,7 +309,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
       } else {
         showToast("No pending transfers found for this email", "info");
       }
-      await Promise.all([refetchPendingTransfers(), refetch(), refetchBalance()]);
+      await Promise.all([refetchPendingTransfers(), refetchBalance()]);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to claim pending transfers";
       showToast(message, "error");
@@ -318,12 +319,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   useFocusEffect(
     useCallback(() => {
       if (hasBaseWallet) {
-        refetch();
         refetchBalance();
-        refetchBlockchainTxs();
         refetchPendingTransfers();
       }
-    }, [hasBaseWallet, refetch, refetchBalance, refetchBlockchainTxs, refetchPendingTransfers])
+    }, [hasBaseWallet, refetchBalance, refetchPendingTransfers])
   );
 
   // Fetch FX rate when currency changes
@@ -425,92 +424,46 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     setSelectedPaymentMethod(null);
   };
 
-  // Combined activity list (blockchain transactions + app transfers)
-  type Activity =
-    | { type: "app-transfer"; data: TransferRecord; timestamp: number }
-    | { type: "blockchain-tx"; data: BlockchainTransaction; timestamp: number };
-
-  const activities = useMemo<Activity[]>(() => {
-    const appActivities: Activity[] = (transfers ?? []).map(t => ({
-      type: "app-transfer" as const,
-      data: t,
-      timestamp: new Date(t.createdAt).getTime(),
-    }));
-
-    const blockchainActivities: Activity[] = (blockchainTxs ?? []).map(tx => ({
-      type: "blockchain-tx" as const,
-      data: tx,
-      timestamp: tx.timestamp,
-    }));
-
-    // Combine and sort by timestamp (newest first)
-    return [...appActivities, ...blockchainActivities]
-      .sort((a, b) => b.timestamp - a.timestamp);
-  }, [transfers, blockchainTxs]);
-
-  // Claimable transfers removed - users claim via web link from email only
-
-
-
-  const renderActivity = ({ item }: ListRenderItemInfo<Activity>) => {
-    if (item.type === "app-transfer") {
-      const transfer = item.data;
-      return (
-        <View style={styles.transferRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.transferEmail}>{transfer.intent.recipientEmail}</Text>
-            <Text style={styles.transferMeta}>
-              {transfer.status === "sent" ? "Sent" : "Pending signup"} · {formatRelativeDate(transfer.createdAt)}
-            </Text>
-            {transfer.recipientWallet ? (
-              <Text style={styles.transferMeta}>Wallet: {formatShortAddress(transfer.recipientWallet)}</Text>
-            ) : null}
-            {transfer.redemptionCode ? (
-              <Text style={styles.transferMeta}>Redemption code: {transfer.redemptionCode}</Text>
-            ) : null}
-          </View>
-          <Text style={styles.transferAmount}>-{transfer.intent.amountUsdc.toFixed(2)} USDC</Text>
-        </View>
-      );
-    } else {
-      const tx = item.data;
-      return (
-        <View style={styles.transferRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.transferEmail}>
-              {tx.type === "sent" ? "To: " : "From: "}
-              {tx.type === "sent" ? formatShortAddress(tx.to) : formatShortAddress(tx.from)}
-            </Text>
-            <Text style={styles.transferMeta}>
-              {tx.type === "sent" ? "Sent" : "Received"} · {formatRelativeDate(tx.timestamp)}
-            </Text>
-            <Text style={styles.transferMeta}>Tx: {formatShortAddress(tx.hash)}</Text>
-          </View>
-          <Text style={[styles.transferAmount, tx.type === "received" && styles.transferAmountReceived]}>
-            {tx.type === "sent" ? "-" : "+"}{tx.value.toFixed(2)} USDC
-          </Text>
-        </View>
-      );
-    }
+  const handleTransactionPress = (item: ActivityItem) => {
+    setSelectedTransaction(item);
+    setIsTransactionModalVisible(true);
   };
 
-  const renderItem = ({ item }: ListRenderItemInfo<TransferRecord>) => (
-    <View style={styles.transferRow}>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.transferEmail}>{item.intent.recipientEmail}</Text>
-        <Text style={styles.transferMeta}>
-          {item.status === "sent" ? "Sent" : "Pending signup"} · {formatRelativeDate(item.createdAt)}
-        </Text>
-        {item.recipientWallet ? (
-          <Text style={styles.transferMeta}>Wallet: {formatShortAddress(item.recipientWallet)}</Text>
-        ) : null}
-        {item.redemptionCode ? (
-          <Text style={styles.transferMeta}>Redemption code: {item.redemptionCode}</Text>
-        ) : null}
-      </View>
-      <Text style={styles.transferAmount}>{item.intent.amountUsdc.toFixed(2)} USDC</Text>
-    </View>
-  );
+  const renderActivity = ({ item }: ListRenderItemInfo<ActivityItem>) => {
+    const isReceived = item.amount > 0;
+
+    let icon = <Text style={{ fontSize: 20 }}>💸</Text>;
+    switch (item.type) {
+      case 'gift-sent':
+      case 'gift-received':
+        icon = <Text style={{ fontSize: 20 }}>🎁</Text>;
+        break;
+      case 'payment-request-paid':
+      case 'payment-request-received':
+        icon = <Text style={{ fontSize: 20 }}>📄</Text>;
+        break;
+      case 'tip-sent':
+      case 'tip-received':
+        icon = <Text style={{ fontSize: 20 }}>💸</Text>;
+        break;
+      default:
+        icon = <Text style={{ fontSize: 20 }}>{isReceived ? '⬇️' : '↗️'}</Text>;
+    }
+
+    return (
+      <TouchableOpacity onPress={() => handleTransactionPress(item)}>
+        <TransactionCard
+          title={item.title}
+          subtitle={formatRelativeDate(new Date(item.timestamp).toISOString())}
+          amount={`${item.amount > 0 ? '+' : ''}${item.amount.toFixed(2)} ${item.currency}`}
+          icon={icon}
+          statusText={item.status === 'pending' ? 'Pending' : undefined}
+        />
+      </TouchableOpacity>
+    );
+  };
+
+
 
   const copyWalletAddress = () => {
     if (profile?.walletAddress) {
@@ -701,7 +654,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
 
               <FlatList
                 data={hasBaseWallet ? activities.slice(0, 5) : []}
-                keyExtractor={(item, index) => `${item.type}-${item.type === "app-transfer" ? item.data.id : item.data.hash}-${index}`}
+                keyExtractor={(item) => item.id}
                 renderItem={renderActivity}
                 style={styles.list}
                 contentContainerStyle={styles.listContentHome}
@@ -709,11 +662,19 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                   <Text style={styles.emptyState}>
                     {!hasBaseWallet
                       ? "Connect your wallet to view transactions"
-                      : isLoading || loadingBlockchainTxs
-                        ? "Loading transactions..."
-                        : "No transactions yet"}
+                      : activities.length === 0
+                        ? "No transactions yet"
+                        : null}
                   </Text>
                 }
+              />
+
+              <TransactionDetailsModal
+                visible={isTransactionModalVisible}
+                onClose={() => setIsTransactionModalVisible(false)}
+                transaction={selectedTransaction}
+                userCurrency={userCurrency}
+                fxRate={fxRate}
               />
 
             </>
@@ -755,7 +716,106 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             </View>
           )}
 
-          {/* More Features Modal */}
+          {isDepositModalVisible && (
+            <View style={styles.inlineSendOverlay} pointerEvents="box-none">
+              <Pressable style={styles.inlineSendBackdrop} onPress={() => setIsDepositModalVisible(false)} />
+              <View style={styles.inlineSendSheet}>
+                <Text style={styles.inlineSendTitle}>Deposit From</Text>
+                <Text style={styles.inlineSendSubtitle}>
+                  Choose how you want to add funds to your wallet.
+                </Text>
+
+                <TouchableOpacity
+                  style={styles.inlineSendButton}
+                  onPress={() => {
+                    setIsDepositModalVisible(false);
+                    navigation.navigate("Deposit");
+                  }}
+                >
+                  <View style={styles.inlineSendButtonCopy}>
+                    <Text style={styles.inlineSendButtonTitle}>Local Payment Method</Text>
+                    <Text style={styles.inlineSendButtonSubtitle}>Bank transfer, Card</Text>
+                  </View>
+                  <Text style={styles.inlineSendBadge}>🏦</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.inlineSendButton}
+                  onPress={() => {
+                    setIsDepositModalVisible(false);
+                    setSelectedRampType("onramp");
+                  }}
+                >
+                  <View style={styles.inlineSendButtonCopy}>
+                    <Text style={styles.inlineSendButtonTitle}>Wallet or Exchange</Text>
+                    <Text style={styles.inlineSendButtonSubtitle}>Transfer from another wallet</Text>
+                  </View>
+                  <Text style={styles.inlineSendBadge}>👛</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.inlineSendButton}
+                  onPress={() => {
+                    Alert.alert("Coming Soon", "ACH Bank Transfer is coming soon!");
+                  }}
+                >
+                  <View style={styles.inlineSendButtonCopy}>
+                    <Text style={styles.inlineSendButtonTitle}>ACH Bank Transfer</Text>
+                    <Text style={styles.inlineSendButtonSubtitle}>US/Canada Users</Text>
+                  </View>
+                  <Text style={styles.inlineSendBadge}>🏛️</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.inlineSendDismiss} onPress={() => setIsDepositModalVisible(false)}>
+                  <Text style={styles.inlineSendDismissText}>Dismiss</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {isWithdrawModalVisible && (
+            <View style={styles.inlineSendOverlay} pointerEvents="box-none">
+              <Pressable style={styles.inlineSendBackdrop} onPress={() => setIsWithdrawModalVisible(false)} />
+              <View style={styles.inlineSendSheet}>
+                <Text style={styles.inlineSendTitle}>Withdraw</Text>
+                <Text style={styles.inlineSendSubtitle}>
+                  Choose how you want to withdraw your funds.
+                </Text>
+
+                <TouchableOpacity
+                  style={styles.inlineSendButton}
+                  onPress={() => {
+                    setIsWithdrawModalVisible(false);
+                    navigation.navigate("Withdraw");
+                  }}
+                >
+                  <View style={styles.inlineSendButtonCopy}>
+                    <Text style={styles.inlineSendButtonTitle}>Local Payment Method</Text>
+                    <Text style={styles.inlineSendButtonSubtitle}>Bank transfer, Card</Text>
+                  </View>
+                  <Text style={styles.inlineSendBadge}>🏦</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.inlineSendButton}
+                  onPress={() => {
+                    setIsWithdrawModalVisible(false);
+                    setSelectedRampType("offramp");
+                  }}
+                >
+                  <View style={styles.inlineSendButtonCopy}>
+                    <Text style={styles.inlineSendButtonTitle}>Exchange/Wallet</Text>
+                    <Text style={styles.inlineSendButtonSubtitle}>Transfer to another wallet</Text>
+                  </View>
+                  <Text style={styles.inlineSendBadge}>👛</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.inlineSendDismiss} onPress={() => setIsWithdrawModalVisible(false)}>
+                  <Text style={styles.inlineSendDismissText}>Dismiss</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
           <Modal
             visible={isMoreFeaturesModalVisible}
             transparent
@@ -1188,48 +1248,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                   </View>
                 </View>
 
-                <View style={styles.settingsSection}>
-                  <Text style={styles.settingsSectionTitle}>Location</Text>
-
-                  <View style={styles.settingRow}>
-                    <View style={styles.settingInfo}>
-                      <Text style={styles.settingTitle}>Location Access</Text>
-                      <Text style={styles.settingDescription}>
-                        {locationPermission === 'granted'
-                          ? `Enabled - ${userCountry || 'Detecting...'}`
-                          : locationPermission === 'denied'
-                            ? 'Denied - Limited payment options'
-                            : 'Not enabled - Using device locale'}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <TouchableOpacity
-                    style={styles.settingRow}
-                    onPress={() => setIsCurrencySelectorVisible(true)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.settingInfo}>
-                      <Text style={styles.settingTitle}>Display Currency</Text>
-                      <Text style={styles.settingDescription}>
-                        {userCurrency} ({currencySymbol})
-                      </Text>
-                    </View>
-                    <Text style={styles.settingArrow}>→</Text>
-                  </TouchableOpacity>
-
-                  {locationPermission !== 'granted' && (
-                    <TouchableOpacity
-                      style={styles.locationButton}
-                      onPress={handleRequestLocation}
-                    >
-                      <Text style={styles.locationButtonText}>Enable Location Access</Text>
-                      <Text style={styles.locationButtonSubtext}>
-                        Get accurate currency and access to region-specific payment providers
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
+                {/* Location section removed as requested */}
 
                 <View style={styles.settingsSection}>
                   <Text style={styles.settingsSectionTitle}>Account</Text>
@@ -1296,117 +1315,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
           </View>
         </View>
 
-        <Modal
-          visible={isDepositModalVisible}
-          transparent
-          animationType="slide"
-          onRequestClose={() => setIsDepositModalVisible(false)}
-        >
-          <Pressable style={styles.modalOverlay} onPress={() => setIsDepositModalVisible(false)}>
-            <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
-              <View style={styles.modalHandle} />
-              <Text style={styles.modalTitle}>Deposit From</Text>
 
-              <TouchableOpacity
-                style={styles.modalOption}
-                onPress={() => {
-                  setIsDepositModalVisible(false);
-                  navigation.navigate("Deposit");
-                }}
-              >
-                <View style={styles.modalOptionIcon}>
-                  <Text style={styles.modalOptionEmoji}>🏦</Text>
-                </View>
-                <View style={styles.modalOptionText}>
-                  <Text style={styles.modalOptionTitle}>Local Payment Method</Text>
-                  <Text style={styles.modalOptionSubtitle}>Bank transfer, Card</Text>
-                </View>
-                <Text style={styles.settingArrow}>→</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.modalOption}
-                onPress={() => {
-                  setIsDepositModalVisible(false);
-                  setSelectedRampType("onramp");
-                }}
-              >
-                <View style={styles.modalOptionIcon}>
-                  <Text style={styles.modalOptionEmoji}>👛</Text>
-                </View>
-                <View style={styles.modalOptionText}>
-                  <Text style={styles.modalOptionTitle}>Wallet or Exchange</Text>
-                  <Text style={styles.modalOptionSubtitle}>Transfer from another wallet</Text>
-                </View>
-                <Text style={styles.settingArrow}>→</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.modalOption}
-                onPress={() => {
-                  Alert.alert("Coming Soon", "ACH Bank Transfer is coming soon!");
-                }}
-              >
-                <View style={styles.modalOptionIcon}>
-                  <Text style={styles.modalOptionEmoji}>🏛️</Text>
-                </View>
-                <View style={styles.modalOptionText}>
-                  <Text style={styles.modalOptionTitle}>ACH Bank Transfer</Text>
-                  <Text style={styles.modalOptionSubtitle}>US/Canada Users</Text>
-                </View>
-                <Text style={styles.settingArrow}>→</Text>
-              </TouchableOpacity>
-            </Pressable>
-          </Pressable>
-        </Modal>
-
-        <Modal
-          visible={isWithdrawModalVisible}
-          transparent
-          animationType="slide"
-          onRequestClose={() => setIsWithdrawModalVisible(false)}
-        >
-          <Pressable style={styles.modalOverlay} onPress={() => setIsWithdrawModalVisible(false)}>
-            <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
-              <View style={styles.modalHandle} />
-              <Text style={styles.modalTitle}>Withdraw</Text>
-
-              <TouchableOpacity
-                style={styles.modalOption}
-                onPress={() => {
-                  setIsWithdrawModalVisible(false);
-                  navigation.navigate("Withdraw");
-                }}
-              >
-                <View style={styles.modalOptionIcon}>
-                  <Text style={styles.modalOptionEmoji}>🏦</Text>
-                </View>
-                <View style={styles.modalOptionText}>
-                  <Text style={styles.modalOptionTitle}>Local Payment Method</Text>
-                  <Text style={styles.modalOptionSubtitle}>Bank transfer, Card</Text>
-                </View>
-                <Text style={styles.settingArrow}>→</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.modalOption}
-                onPress={() => {
-                  setIsWithdrawModalVisible(false);
-                  setSelectedRampType("offramp");
-                }}
-              >
-                <View style={styles.modalOptionIcon}>
-                  <Text style={styles.modalOptionEmoji}>👛</Text>
-                </View>
-                <View style={styles.modalOptionText}>
-                  <Text style={styles.modalOptionTitle}>Exchange/Wallet</Text>
-                  <Text style={styles.modalOptionSubtitle}>Transfer to another wallet</Text>
-                </View>
-                <Text style={styles.settingArrow}>→</Text>
-              </TouchableOpacity>
-            </Pressable>
-          </Pressable>
-        </Modal>
 
         <ToastModal
           visible={toast.visible}
@@ -1538,12 +1447,12 @@ const createStyles = (colors: ColorPalette) =>
     },
     greeting: {
       ...typography.body,
-      color: "#003366",
+      color: "#FFFFFF",
       fontSize: 14,
     },
     username: {
       ...typography.subtitle,
-      color: "#003366",
+      color: "#FFFFFF",
       fontSize: 18,
       fontWeight: "600",
     },
@@ -1553,30 +1462,30 @@ const createStyles = (colors: ColorPalette) =>
     },
     balanceLabel: {
       ...typography.body,
-      color: "#003366",
+      color: "#FFFFFF",
       fontSize: 14,
       marginBottom: spacing.xs,
     },
     balanceAmount: {
       fontSize: 48,
       fontWeight: "800",
-      color: "#003366",
+      color: "#FFFFFF",
       marginBottom: spacing.xs,
       letterSpacing: -1,
     },
     balanceSubtext: {
       ...typography.body,
-      color: "#003366",
+      color: "#FFFFFF",
       fontSize: 13,
     },
     walletLabel: {
       ...typography.body,
-      color: "#003366",
+      color: "#FFFFFF",
       fontSize: 13,
     },
     walletAddress: {
       ...typography.body,
-      color: "#003366",
+      color: "#FFFFFF",
       fontFamily: "monospace",
       fontSize: 13,
     },

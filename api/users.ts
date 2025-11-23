@@ -25,7 +25,6 @@ router.get('/', async (req: Request, res: Response) => {
     return res.status(401).json({ success: false, error: 'Unauthorized' });
   }
   try {
-    // ...existing code for GET...
     // Check if MongoDB is configured
     if (!process.env.MONGODB_URI) {
       return res.status(500).json({ success: false, error: 'Database not configured' });
@@ -33,22 +32,33 @@ router.get('/', async (req: Request, res: Response) => {
     const dbPromise = getDatabase();
     const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Database connection timeout')), 8000));
     const db = await Promise.race([dbPromise, timeoutPromise]) as Awaited<ReturnType<typeof getDatabase>>;
-    const { email, userId, search, limit } = req.query;
+
+    const { email, userId, walletAddress, search, limit } = req.query;
+
     if (search && typeof search === 'string') {
       const users = await db.searchUsersByEmail(search, limit ? Number(limit) : 10);
       return res.status(200).json({ success: true, users });
     }
+
     if (email && typeof email === 'string') {
       const normalizedEmail = email.toLowerCase().trim();
       const user = await db.getUserByEmail(normalizedEmail);
       return res.status(200).json({ success: true, user });
     }
+
     if (userId && typeof userId === 'string') {
       const user = await db.getUserById(userId);
       return res.status(200).json({ success: true, user });
     }
-    return badRequest(res, 'Provide email, userId, or search query');
+
+    if (walletAddress && typeof walletAddress === 'string') {
+      const user = await db.getUserByWalletAddress(walletAddress);
+      return res.status(200).json({ success: true, user });
+    }
+
+    return badRequest(res, 'Provide email, userId, walletAddress, or search query');
   } catch (err) {
+    console.error('Users GET error:', err);
     return res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });

@@ -31,7 +31,7 @@ describe("SharedEscrow", () => {
     const escrow = await SharedEscrow.deploy(admin.address);
 
     const mintAmount = ethers.parseUnits("1000", 6);
-    await token.connect(admin).mint(sender.address, mintAmount);
+    await (token as any).connect(admin).mint(sender.address, mintAmount);
 
     return { escrow, token, admin, sender, recipient };
   }
@@ -42,14 +42,14 @@ describe("SharedEscrow", () => {
     const amount = ethers.parseUnits("10", 6);
     const escrowAddress = await escrow.getAddress();
     const tokenAddress = await token.getAddress();
-    await token.connect(sender).approve(escrowAddress, amount);
+    await (token as any).connect(sender).approve(escrowAddress, amount);
 
     const recipientHash = ethers.keccak256(ethers.toUtf8Bytes("alice@example.com"));
     const expiry = (await time.latest()) + 3600;
     const transferId = computeTransferId(recipientHash, amount, expiry);
 
     await expect(
-      escrow.connect(admin).createTransfer(
+      (escrow as any).connect(admin).createTransfer(
         {
           transferId,
           token: tokenAddress,
@@ -64,9 +64,9 @@ describe("SharedEscrow", () => {
       .to.emit(escrow, "TransferCreated")
       .withArgs(transferId, sender.address, recipientHash, tokenAddress, amount, expiry);
 
-    const stored = await escrow.getTransfer(transferId);
+    const stored = await (escrow as any).getTransfer(transferId);
     expect(stored.amount).to.equal(amount);
-    expect(await escrow.lockedBalance(tokenAddress)).to.equal(amount);
+    expect(await (escrow as any).lockedBalance(tokenAddress)).to.equal(amount);
   });
 
   it("claims a pending transfer", async () => {
@@ -75,23 +75,23 @@ describe("SharedEscrow", () => {
     const amount = ethers.parseUnits("25", 6);
     const escrowAddress = await escrow.getAddress();
     const tokenAddress = await token.getAddress();
-    await token.connect(sender).approve(escrowAddress, amount);
+    await (token as any).connect(sender).approve(escrowAddress, amount);
 
     const recipientHash = ethers.keccak256(ethers.toUtf8Bytes("bob@example.com"));
     const expiry = (await time.latest()) + 3600;
     const transferId = computeTransferId(recipientHash, amount, expiry);
 
-    await escrow.connect(admin).createTransfer(
+    await (escrow as any).connect(admin).createTransfer(
       { transferId, token: tokenAddress, fundingWallet: sender.address, amount, recipientHash, expiry },
       emptyPermit
     );
 
-    await expect(escrow.connect(admin).claimTransfer(transferId, recipient.address, recipientHash))
+    await expect((escrow as any).connect(admin).claimTransfer(transferId, recipient.address, recipientHash))
       .to.emit(escrow, "TransferClaimed")
       .withArgs(transferId, recipient.address);
 
     expect(await token.balanceOf(recipient.address)).to.equal(amount);
-    const info = await escrow.getTransfer(transferId);
+    const info = await (escrow as any).getTransfer(transferId);
     expect(info.status).to.equal(2); // Status.Claimed
   });
 
@@ -101,13 +101,13 @@ describe("SharedEscrow", () => {
     const amount = ethers.parseUnits("5", 6);
     const escrowAddress = await escrow.getAddress();
     const tokenAddress = await token.getAddress();
-    await token.connect(sender).approve(escrowAddress, amount);
+    await (token as any).connect(sender).approve(escrowAddress, amount);
 
     const recipientHash = ethers.keccak256(ethers.toUtf8Bytes("carol@example.com"));
     const expiry = (await time.latest()) + 10;
     const transferId = computeTransferId(recipientHash, amount, expiry);
 
-    await escrow.connect(admin).createTransfer(
+    await (escrow as any).connect(admin).createTransfer(
       { transferId, token: tokenAddress, fundingWallet: sender.address, amount, recipientHash, expiry },
       emptyPermit
     );
@@ -115,32 +115,32 @@ describe("SharedEscrow", () => {
     await time.increaseTo(expiry + 1);
 
     const prevBalance = await token.balanceOf(sender.address);
-    await expect(escrow.connect(admin).refundTransfer(transferId, sender.address))
+    await expect((escrow as any).connect(admin).refundTransfer(transferId, sender.address))
       .to.emit(escrow, "TransferRefunded")
       .withArgs(transferId, sender.address);
 
     const newBalance = await token.balanceOf(sender.address);
     expect(newBalance).to.equal(prevBalance + amount);
-    const info = await escrow.getTransfer(transferId);
+    const info = await (escrow as any).getTransfer(transferId);
     expect(info.status).to.equal(3); // Refunded
   });
 
   it("prevents operations while paused", async () => {
     const { escrow, token, admin, sender } = await deployFixture();
 
-    await escrow.connect(admin).pause();
+    await (escrow as any).connect(admin).pause();
 
     const amount = ethers.parseUnits("1", 6);
     const escrowAddress = await escrow.getAddress();
     const tokenAddress = await token.getAddress();
-    await token.connect(sender).approve(escrowAddress, amount);
+    await (token as any).connect(sender).approve(escrowAddress, amount);
 
     const recipientHash = ethers.keccak256(ethers.toUtf8Bytes("eve@example.com"));
     const expiry = (await time.latest()) + 3600;
     const transferId = computeTransferId(recipientHash, amount, expiry);
 
     await expect(
-      escrow.connect(admin).createTransfer(
+      (escrow as any).connect(admin).createTransfer(
         { transferId, token: tokenAddress, fundingWallet: sender.address, amount, recipientHash, expiry },
         emptyPermit
       )

@@ -60,6 +60,7 @@
     "react-native-screens": "~4.16.0",
     "react-native-webview": "^13.16.0",
     "resend": "^6.4.2",
+    "superstruct": "^2.0.2",
     "ts-node": "^10.9.2",
     "typescript": "~5.9.2",
     "viem": "^2.39.0",
@@ -68,6 +69,7 @@
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "@react-native-community/cli": "latest",
+    "@react-native/metro-config": "^0.82.1",
     "@types/react": "~19.1.0",
     "babel-preset-expo": "^54.0.7",
     "hardhat": "^2.22.5",

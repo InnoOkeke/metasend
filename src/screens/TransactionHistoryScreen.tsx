@@ -1,33 +1,25 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ScrollView, Alert } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useCoinbase } from "../providers/CoinbaseProvider";
 import { useTheme } from "../providers/ThemeProvider";
 import { RootStackParamList } from "../navigation/RootNavigator";
 import { spacing, typography } from "../utils/theme";
 import { TransactionCard } from "../components/TransactionCard";
+import { TransactionDetailsModal } from "../components/TransactionDetailsModal";
 import { Linking } from "react-native";
 import Constants from "expo-constants";
 import type { ColorPalette } from "../utils/theme";
 import { formatRelativeDate, formatShortAddress } from "../utils/format";
-import { listTransfers, TransferRecord } from "../services/transfers";
-import { getUsdcTransactions, type BlockchainTransaction } from "../services/blockchain";
-import { getCryptoGifts, type CryptoGift } from "../services/gifts";
-import { getPaymentRequests, type PaymentRequest } from "../services/paymentRequests";
-import { getInvoices, type Invoice } from "../services/invoices";
 import { cancelPendingTransfer, getSentPendingTransfers, type PendingTransferSummary } from "../services/api";
+import { useRecentActivity, ActivityItem } from "../hooks/useRecentActivity";
+import { TransferRecord } from "../services/transfers";
 
 type Props = NativeStackScreenProps<RootStackParamList, "TransactionHistory">;
 
 type TabType = "all" | "sent" | "received" | "pending" | "expired";
-
-type ActivityItem = {
-  type: "transfer" | "blockchain" | "gift" | "payment-request" | "invoice";
-  data: TransferRecord | BlockchainTransaction | CryptoGift | PaymentRequest | Invoice;
-  timestamp: number;
-};
 
 const pendingStatusLabels: Record<PendingTransferSummary["status"], string> = {
   pending: "Pending",
@@ -42,7 +34,11 @@ export const TransactionHistoryScreen: React.FC<Props> = ({ navigation }) => {
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [activeTab, setActiveTab] = useState<TabType>("all");
   const [shouldPollPending, setShouldPollPending] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState<ActivityItem | null>(null);
+  const [modalVisible, setModalVisible] = useState(false);
   const queryClient = useQueryClient();
+
+  const { activities } = useRecentActivity();
 
   const { data: sentPendingTransfers } = useQuery({
     queryKey: ["sentPendingTransfers", profile?.userId],
@@ -91,21 +87,22 @@ export const TransactionHistoryScreen: React.FC<Props> = ({ navigation }) => {
   });
 
   const getPendingSummaryForTransfer = useCallback(
-    (transfer: TransferRecord): PendingTransferSummary | undefined => {
+    (transferId: string, recipientEmail?: string, amount?: number, createdAt?: number): PendingTransferSummary | undefined => {
       if (!sentPendingTransfers || sentPendingTransfers.length === 0) {
         return undefined;
       }
 
-      if (transfer.pendingTransferId) {
-        const directMatch = pendingTransferMap.get(transfer.pendingTransferId);
-        if (directMatch) {
-          return directMatch;
-        }
+      // Try direct match first if we have a transfer ID (which might be the pendingTransferId)
+      const directMatch = pendingTransferMap.get(transferId);
+      if (directMatch) {
+        return directMatch;
       }
 
-      const normalizedEmail = transfer.intent.recipientEmail.toLowerCase();
-      const targetAmount = Number(transfer.intent.amountUsdc);
-      const transferTimestamp = new Date(transfer.createdAt).getTime();
+      if (!recipientEmail || !amount || !createdAt) return undefined;
+
+      const normalizedEmail = recipientEmail.toLowerCase();
+      const targetAmount = amount;
+      const transferTimestamp = createdAt;
       const MATCH_WINDOW_MS = 15 * 60 * 1000; // 15 minutes tolerance
 
       return sentPendingTransfers.find(summary => {
@@ -119,9 +116,21 @@ export const TransactionHistoryScreen: React.FC<Props> = ({ navigation }) => {
     [pendingTransferMap, sentPendingTransfers]
   );
 
-  const handleCancelTransfer = (transfer: TransferRecord) => {
-    const pendingSummary = getPendingSummaryForTransfer(transfer);
-    const effectiveTransferId = pendingSummary?.transferId ?? transfer.pendingTransferId;
+  const handleCancelTransfer = (item: ActivityItem) => {
+    // We need to reconstruct enough info to find the pending summary
+    // For transfers, item.id is the transfer ID.
+    // But for pending transfers, we might need the pendingTransferId which isn't directly in ActivityItem
+    // However, useRecentActivity puts the transfer ID in item.id.
+
+    // We can try to find the pending summary using metadata
+    const pendingSummary = getPendingSummaryForTransfer(
+      item.id,
+      item.metadata?.to,
+      Math.abs(item.amount),
+      item.timestamp
+    );
+
+    const effectiveTransferId = pendingSummary?.transferId || item.id;
 
     if (!effectiveTransferId) {
       Alert.alert(
@@ -136,254 +145,111 @@ export const TransactionHistoryScreen: React.FC<Props> = ({ navigation }) => {
       "This will refund the USDC to your wallet. The recipient won't be able to claim it.",
       [
         { text: "Keep Transfer", style: "cancel" },
-        { 
-          text: "Cancel Transfer", 
+        {
+          text: "Cancel Transfer",
           style: "destructive",
           onPress: () =>
             cancelTransferMutation.mutate({
               transferId: effectiveTransferId,
-              placeholderId: transfer.pendingTransferId,
+              placeholderId: item.id,
             })
         },
       ]
     );
   };
 
-  const { data: transfers } = useQuery({
-    queryKey: ["transfers", profile?.walletAddress],
-    queryFn: () => {
-      if (!profile?.walletAddress) throw new Error("No wallet");
-      return listTransfers(profile.walletAddress);
-    },
-    enabled: !!profile?.walletAddress,
-  });
-
-  const { data: blockchainTxs } = useQuery({
-    queryKey: ["blockchainTransactions", profile?.walletAddress],
-    queryFn: () => {
-      if (!profile?.walletAddress) throw new Error("No wallet");
-      return getUsdcTransactions(profile.walletAddress as `0x${string}`);
-    },
-    enabled: !!profile?.walletAddress,
-  });
-
-  const { data: gifts } = useQuery({
-    queryKey: ["gifts", profile?.email],
-    queryFn: () => getCryptoGifts(profile?.email || profile?.walletAddress),
-    enabled: !!profile,
-  });
-
-  const { data: paymentRequests } = useQuery({
-    queryKey: ["paymentRequests", profile?.email],
-    queryFn: () => getPaymentRequests(profile?.email),
-    enabled: !!profile?.email,
-  });
-
-  const { data: invoices } = useQuery({
-    queryKey: ["invoices", profile?.email],
-    queryFn: () => getInvoices(profile?.email),
-    enabled: !!profile?.email,
-  });
-
-  const activities = useMemo(() => {
-    const items: ActivityItem[] = [];
-
-    transfers?.forEach(t => {
-      items.push({
-        type: "transfer",
-        data: t,
-        timestamp: new Date(t.createdAt).getTime(),
-      });
-    });
-
-    blockchainTxs?.forEach(tx => {
-      items.push({
-        type: "blockchain",
-        data: tx,
-        timestamp: tx.timestamp,
-      });
-    });
-
-    gifts?.forEach(g => {
-      items.push({
-        type: "gift",
-        data: g,
-        timestamp: new Date(g.createdAt).getTime(),
-      });
-    });
-
-    paymentRequests?.forEach(pr => {
-      items.push({
-        type: "payment-request",
-        data: pr,
-        timestamp: new Date(pr.createdAt).getTime(),
-      });
-    });
-
-    invoices?.forEach(inv => {
-      items.push({
-        type: "invoice",
-        data: inv,
-        timestamp: new Date(inv.createdAt).getTime(),
-      });
-    });
-
-    return items.sort((a, b) => b.timestamp - a.timestamp);
-  }, [transfers, blockchainTxs, gifts, paymentRequests, invoices]);
-
   const filteredActivities = useMemo(() => {
     if (activeTab === "all") return activities;
 
     return activities.filter(item => {
       if (activeTab === "sent") {
-        if (item.type === "transfer") return (item.data as TransferRecord).status === "sent";
-        if (item.type === "blockchain") return (item.data as BlockchainTransaction).type === "sent";
-        if (item.type === "gift") return (item.data as CryptoGift).fromEmail === profile?.email;
-        if (item.type === "payment-request") return (item.data as PaymentRequest).fromEmail === profile?.email;
-        if (item.type === "invoice") return (item.data as Invoice).fromEmail === profile?.email;
+        return item.type.endsWith("-sent") ||
+          item.type === "payment-request-received" || // I created request -> I sent request
+          item.type === "payment-request-paid";     // I paid request -> I sent money
       }
 
       if (activeTab === "received") {
-        if (item.type === "blockchain") return (item.data as BlockchainTransaction).type === "received";
-        if (item.type === "gift") return (item.data as CryptoGift).toEmail === profile?.email;
-        if (item.type === "payment-request") return (item.data as PaymentRequest).toEmail === profile?.email && (item.data as PaymentRequest).status === "paid";
-        if (item.type === "invoice") return (item.data as Invoice).toEmail === profile?.email && (item.data as Invoice).status === "paid";
+        return item.type.endsWith("-received") ||
+          item.type === "invoice-received"; // I received invoice
       }
 
       if (activeTab === "pending") {
-        if (item.type === "transfer") return (item.data as TransferRecord).status === "pending_recipient_signup";
-        if (item.type === "gift") return (item.data as CryptoGift).status === "pending";
-        if (item.type === "payment-request") return (item.data as PaymentRequest).status === "pending";
-        if (item.type === "invoice") return ["sent", "overdue"].includes((item.data as Invoice).status);
+        return item.status === "pending";
       }
 
       if (activeTab === "expired") {
-        if (item.type === "gift") return (item.data as CryptoGift).status === "expired";
-        if (item.type === "payment-request") return (item.data as PaymentRequest).status === "expired";
+        return item.status === "expired";
       }
 
       return false;
     });
-  }, [activities, activeTab, profile]);
+  }, [activities, activeTab]);
 
   const renderActivity = ({ item }: { item: ActivityItem }) => {
-    if (item.type === "transfer") {
-      const transfer = item.data as TransferRecord;
-      const pendingDetails = getPendingSummaryForTransfer(transfer);
-      const pendingStatusLabel = pendingDetails
-        ? pendingStatusLabels[pendingDetails.status]
-        : transfer.status === "sent"
-          ? "Completed"
-          : "Pending";
-      const canCancel = Boolean(
-        pendingDetails ? pendingDetails.status === "pending" : transfer.status === "pending_recipient_signup" && transfer.pendingTransferId
+    const explorerUrl = Constants?.expoConfig?.extra?.BASE_EXPLORER_URL;
+
+    // Check for pending transfer specific logic
+    let subtitle = item.subtitle || "";
+    let canCancel = false;
+    let isCancelling = false;
+
+    if (item.type === "transfer-sent" && item.status === "pending") {
+      const pendingDetails = getPendingSummaryForTransfer(
+        item.id,
+        item.metadata?.to,
+        Math.abs(item.amount),
+        item.timestamp
       );
-      const effectiveTransferId = pendingDetails?.transferId ?? transfer.pendingTransferId;
-      const isCancelling = Boolean(
-        cancelTransferMutation.isPending &&
+
+      if (pendingDetails) {
+        subtitle = `${pendingStatusLabels[pendingDetails.status]} · ${formatRelativeDate(item.timestamp)}`;
+        canCancel = pendingDetails.status === "pending";
+
+        const effectiveTransferId = pendingDetails.transferId;
+        isCancelling = Boolean(
+          cancelTransferMutation.isPending &&
           effectiveTransferId &&
           cancelTransferMutation.variables &&
           (cancelTransferMutation.variables.transferId === effectiveTransferId ||
-            (transfer.pendingTransferId && cancelTransferMutation.variables.placeholderId === transfer.pendingTransferId))
-      );
-      const explorerUrl = Constants?.expoConfig?.extra?.BASE_EXPLORER_URL;
-      const txHash = transfer.txHash || undefined;
-      return (
-        <TransactionCard
-          title={`Transfer to ${transfer.intent.recipientEmail}`}
-          subtitle={`${pendingStatusLabel} · ${formatRelativeDate(transfer.createdAt)}`}
-          amount={`${transfer.intent.amountUsdc.toFixed(2)} USDC`}
-          date={formatRelativeDate(transfer.createdAt)}
-          transactionHash={txHash}
-          explorerUrl={explorerUrl}
-          onPressHash={txHash ? () => Linking.openURL(`${explorerUrl}/tx/${txHash}`) : undefined}
-        >
-          {canCancel && (
-            <TouchableOpacity 
-              style={styles.cancelButton}
-              onPress={() => handleCancelTransfer(transfer)}
-              disabled={cancelTransferMutation.isPending}
-            >
-              <Text style={styles.cancelButtonText}>
-                {isCancelling ? "Cancelling..." : "Cancel Transfer"}
-              </Text>
-            </TouchableOpacity>
-          )}
-        </TransactionCard>
-      );
+            cancelTransferMutation.variables.placeholderId === item.id)
+        );
+      } else {
+        // Fallback if we can't find pending details but know it's pending
+        subtitle = `Pending · ${formatRelativeDate(item.timestamp)}`;
+        // Assume we can cancel if it's a pending transfer-sent
+        canCancel = true;
+      }
+    } else {
+      subtitle = `${item.status.charAt(0).toUpperCase() + item.status.slice(1)} · ${formatRelativeDate(item.timestamp)}`;
     }
 
-    if (item.type === "blockchain") {
-      const tx = item.data as BlockchainTransaction;
-      const explorerUrl = Constants?.expoConfig?.extra?.BASE_EXPLORER_URL;
-      return (
-        <TransactionCard
-          title={`${tx.type === "sent" ? "Sent to" : "Received from"} ${formatShortAddress(tx.type === "sent" ? tx.to : tx.from)}`}
-          subtitle={`On-chain · ${formatRelativeDate(tx.timestamp)}`}
-          amount={`${tx.type === "sent" ? "-" : "+"}${tx.value.toFixed(2)} USDC`}
-          date={formatRelativeDate(tx.timestamp)}
-          transactionHash={tx.hash}
-          explorerUrl={explorerUrl}
-          onPressHash={tx.hash ? () => Linking.openURL(`${explorerUrl}/tx/${tx.hash}`) : undefined}
-        />
-      );
-    }
-
-    if (item.type === "gift") {
-      const gift = item.data as CryptoGift;
-      const isSender = gift.fromEmail === profile?.email;
-      const explorerUrl = Constants?.expoConfig?.extra?.BASE_EXPLORER_URL;
-      const txHash = gift.txHash || undefined;
-      return (
-        <TransactionCard
-          title={isSender ? `Gift sent to ${gift.toEmail || "link"}` : `Gift received from ${gift.fromName}`}
-          subtitle={`${gift.status} · ${formatRelativeDate(gift.createdAt)}`}
-          amount={`${isSender ? "-" : "+"}${gift.amount.toFixed(2)} ${gift.currency}`}
-          date={formatRelativeDate(gift.createdAt)}
-          transactionHash={txHash}
-          explorerUrl={explorerUrl}
-          onPressHash={txHash ? () => Linking.openURL(`${explorerUrl}/tx/${txHash}`) : undefined}
-        />
-      );
-    }
-
-    if (item.type === "payment-request") {
-      const request = item.data as PaymentRequest;
-      const isRequester = request.fromEmail === profile?.email;
-      const explorerUrl = Constants?.expoConfig?.extra?.BASE_EXPLORER_URL;
-      const txHash = request.txHash || undefined;
-      return (
-        <TransactionCard
-          title={isRequester ? `Request to ${request.toEmail}` : `Request from ${request.fromEmail}`}
-          subtitle={`${request.status} · ${formatRelativeDate(request.createdAt)}`}
-          amount={`${request.amount.toFixed(2)} ${request.currency}`}
-          date={formatRelativeDate(request.createdAt)}
-          transactionHash={txHash}
-          explorerUrl={explorerUrl}
-          onPressHash={txHash ? () => Linking.openURL(`${explorerUrl}/tx/${txHash}`) : undefined}
-        />
-      );
-    }
-
-    if (item.type === "invoice") {
-      const invoice = item.data as Invoice;
-      const isSender = invoice.fromEmail === profile?.email;
-      const explorerUrl = Constants?.expoConfig?.extra?.BASE_EXPLORER_URL;
-      const txHash = invoice.txHash || undefined;
-      return (
-        <TransactionCard
-          title={`Invoice ${invoice.invoiceNumber} ${isSender ? `to ${invoice.toName}` : `from ${invoice.fromName}`}`}
-          subtitle={`${invoice.status} · ${formatRelativeDate(invoice.createdAt)}`}
-          amount={`${invoice.total.toFixed(2)} ${invoice.currency}`}
-          date={formatRelativeDate(invoice.createdAt)}
-          transactionHash={txHash}
-          explorerUrl={explorerUrl}
-          onPressHash={txHash ? () => Linking.openURL(`${explorerUrl}/tx/${txHash}`) : undefined}
-        />
-      );
-    }
-
-    return null;
+    return (
+      <TransactionCard
+        title={item.title}
+        subtitle={subtitle}
+        amount={`${item.amount > 0 ? "+" : ""}${item.amount.toFixed(2)} ${item.currency}`}
+        date={formatRelativeDate(item.timestamp)}
+        transactionHash={item.txHash}
+        explorerUrl={explorerUrl}
+        onPress={() => {
+          setSelectedTransaction(item);
+          setModalVisible(true);
+        }}
+        onPressHash={item.txHash ? () => Linking.openURL(`${explorerUrl}/tx/${item.txHash}`) : undefined}
+      >
+        {canCancel && (
+          <TouchableOpacity
+            style={styles.cancelButton}
+            onPress={() => handleCancelTransfer(item)}
+            disabled={cancelTransferMutation.isPending}
+          >
+            <Text style={styles.cancelButtonText}>
+              {isCancelling ? "Cancelling..." : "Cancel Transfer"}
+            </Text>
+          </TouchableOpacity>
+        )}
+      </TransactionCard>
+    );
   };
 
   return (
@@ -413,7 +279,7 @@ export const TransactionHistoryScreen: React.FC<Props> = ({ navigation }) => {
       <FlatList
         data={filteredActivities}
         renderItem={renderActivity}
-        keyExtractor={(item, index) => `${item.type}-${index}`}
+        keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
@@ -421,6 +287,14 @@ export const TransactionHistoryScreen: React.FC<Props> = ({ navigation }) => {
           </View>
         }
       />
+
+      {selectedTransaction && (
+        <TransactionDetailsModal
+          visible={modalVisible}
+          onClose={() => setModalVisible(false)}
+          transaction={selectedTransaction}
+        />
+      )}
     </View>
   );
 };
@@ -464,11 +338,11 @@ const createStyles = (colors: ColorPalette) =>
       paddingVertical: spacing.sm,
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
+      maxHeight: 60,
     },
     tabContentContainer: {
-      justifyContent: 'space-around',
-      flexGrow: 1,
       paddingRight: spacing.md,
+      alignItems: 'center',
     },
     tab: {
       paddingHorizontal: spacing.md,
@@ -478,6 +352,8 @@ const createStyles = (colors: ColorPalette) =>
       backgroundColor: colors.cardBackground,
       minWidth: 70,
       alignItems: 'center',
+      justifyContent: 'center',
+      height: 32,
     },
     tabActive: {
       backgroundColor: colors.primary,
@@ -493,48 +369,6 @@ const createStyles = (colors: ColorPalette) =>
     },
     listContent: {
       padding: spacing.lg,
-    },
-    activityCard: {
-      flexDirection: "row",
-      alignItems: "center",
-      backgroundColor: colors.cardBackground,
-      borderRadius: 12,
-      padding: spacing.md,
-      marginBottom: spacing.md,
-    },
-    activityIcon: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      backgroundColor: `${colors.primary}15`,
-      alignItems: "center",
-      justifyContent: "center",
-      marginRight: spacing.md,
-    },
-    activityEmoji: {
-      fontSize: 20,
-    },
-    activityContent: {
-      flex: 1,
-    },
-    activityTitle: {
-      ...typography.body,
-      color: colors.textPrimary,
-      fontWeight: "600",
-      marginBottom: 4,
-    },
-    activitySubtitle: {
-      ...typography.body,
-      color: colors.textSecondary,
-      fontSize: 12,
-    },
-    activityAmount: {
-      ...typography.body,
-      color: colors.textPrimary,
-      fontWeight: "700",
-    },
-    activityAmountPositive: {
-      color: "#10B981",
     },
     cancelButton: {
       marginTop: spacing.sm,

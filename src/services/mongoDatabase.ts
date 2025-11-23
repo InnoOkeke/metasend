@@ -114,6 +114,7 @@ class MongoDatabase {
     await this.db.collection("gifts").createIndex({ giftId: 1 }, { unique: true });
     await this.db.collection("gifts").createIndex({ senderUserId: 1, createdAt: -1 });
     await this.db.collection("gifts").createIndex({ recipientEmail: 1, status: 1 });
+
     await this.db.collection("gifts").createIndex({ status: 1, expiresAt: 1 });
   }
 
@@ -144,6 +145,12 @@ class MongoDatabase {
     // Normalize email to lowercase and use direct comparison for better performance
     const normalizedEmail = email.toLowerCase().trim();
     return await collection.findOne({ email: normalizedEmail } as any);
+  }
+
+  async getUserByWalletAddress(walletAddress: string): Promise<User | null> {
+    const collection = await this.getCollection<User>("users");
+    // Case-insensitive search for wallet address in base chain
+    return await collection.findOne({ "wallets.base": { $regex: new RegExp(`^${walletAddress}$`, "i") } } as any);
   }
 
   async updateUser(userId: string, updates: Partial<User>): Promise<User | null> {

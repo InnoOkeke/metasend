@@ -64,7 +64,8 @@ export default ({ config }) => ({
   },
   plugins: [
     "expo-localization",
-    "expo-secure-store"
-    // ...existing plugins
+    "expo-secure-store",
+    "./withProGuardRules",
+    "./withKotlinJvmTarget"
   ],
 });

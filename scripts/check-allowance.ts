@@ -46,7 +46,7 @@ async function main() {
     client.readContract({ address: token, abi: erc20Abi, functionName: "allowance", args: [owner, spender] } as any),
     client.readContract({ address: token, abi: erc20Abi, functionName: "balanceOf", args: [owner] } as any),
     client.readContract({ address: token, abi: erc20Abi, functionName: "decimals" } as any),
-  ]);
+  ]) as [bigint, bigint, number];
 
   console.log("Token decimals:", decimals);
   console.log("Balance:", balance.toString());

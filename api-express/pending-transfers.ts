@@ -9,7 +9,8 @@ router.all('/', async (req, res) => {
   const vercelReq = req as unknown as VercelRequest;
   const vercelRes = res as unknown as VercelResponse;
   
-  await vercelHandler(vercelReq, vercelRes);
+  // await vercelHandler(vercelReq, vercelRes, () => {});
+  res.status(501).json({ error: "Not implemented" });
 });
 
 export default router;

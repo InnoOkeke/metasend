@@ -15,34 +15,34 @@ export type ColorPalette = {
 };
 
 export const lightColors: ColorPalette = {
-  background: "#F5F7FA",          // Soft Grey
+  background: "#F4F6F8",          // Soft Light Grey
   cardBackground: "#FFFFFF",
-  textPrimary: "#003366",         // Deep Navy
-  textSecondary: "#5A6B7C",       // Greyish Navy
+  textPrimary: "#1C1C1E",         // Charcoal
+  textSecondary: "#5A6B7C",       // Greyish for secondary text
   inverseText: "#FFFFFF",
-  primary: "#00C2FF",             // Aqua
-  primaryDisabled: "#80E0FF",
-  accent: "#003366",              // Deep Navy
-  accentDisabled: "#4D7099",
+  primary: "#0A1A2F",             // Deep Navy
+  primaryDisabled: "#4D5E75",
+  accent: "#00B686",              // Emerald / Zen Green
+  accentDisabled: "#80DBB3",
   border: "#E1E8ED",              // Light Grey
-  error: "#EF4444",
-  success: "#00C2FF",
+  error: "#E03B3B",               // Finance Red
+  success: "#4ADEB5",             // Mint
   warning: "#F59E0B",
 };
 
 export const darkColors: ColorPalette = {
-  background: "#003366",          // Deep Navy
-  cardBackground: "#004080",      // Lighter Navy for cards
-  textPrimary: "#FFFFFF",         // White
+  background: "#0A1A2F",          // Deep Navy
+  cardBackground: "#152945",      // Lighter Navy for cards
+  textPrimary: "#F4F6F8",         // Soft Light Grey for text
   textSecondary: "#B0C4DE",       // Light Steel Blue
-  inverseText: "#003366",
-  primary: "#00C2FF",             // Aqua
-  primaryDisabled: "#008FBD",
-  accent: "#FFFFFF",              // White
-  accentDisabled: "#CCCCCC",
-  border: "#004080",              // Lighter Navy
-  error: "#F87171",
-  success: "#34D399",
+  inverseText: "#0A1A2F",
+  primary: "#00B686",             // Emerald / Zen Green
+  primaryDisabled: "#006B52",
+  accent: "#4ADEB5",              // Mint
+  accentDisabled: "#9AECD7",
+  border: "#152945",              // Lighter Navy
+  error: "#E03B3B",               // Finance Red
+  success: "#4ADEB5",             // Mint
   warning: "#FBBF24",
 };
 

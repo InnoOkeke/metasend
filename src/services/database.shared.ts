@@ -23,6 +23,16 @@ export class InMemoryDatabase {
     return this.usersByEmail.get(email.toLowerCase()) || null;
   }
 
+  async getUserByWalletAddress(walletAddress: string): Promise<User | null> {
+    const lowerWallet = walletAddress.toLowerCase();
+    for (const user of this.users.values()) {
+      if (user.wallets?.base?.toLowerCase() === lowerWallet) {
+        return user;
+      }
+    }
+    return null;
+  }
+
   async updateUser(userId: string, updates: Partial<User>): Promise<User | null> {
     const user = this.users.get(userId);
     if (!user) return null;

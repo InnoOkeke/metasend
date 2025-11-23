@@ -190,14 +190,14 @@ export const InvoicesScreen: React.FC<Props> = ({ route, navigation }) => {
               }});
             }
 
-            const isSender = inv.fromEmail === profile?.email;
+            const isSender = inv.creatorEmail === profile?.email;
 
             return (
               <TransactionCard
                 key={inv.invoiceId}
-                title={`Invoice ${inv.invoiceNumber} ${isSender ? `to ${inv.toName}` : `from ${inv.fromName}`}`}
+                title={`Invoice ${inv.invoiceNumber} ${isSender ? `to ${inv.clientEmail}` : `from ${inv.creatorEmail}`}`}
                 subtitle={`${inv.status} · ${new Date(inv.issueDate).toLocaleDateString()}`}
-                amount={`$${inv.total} ${inv.currency}`}
+                amount={`$${inv.total} ${inv.token}`}
                 date={new Date(inv.issueDate).toLocaleDateString()}
                 statusText={inv.status}
                 transactionHash={txHash}

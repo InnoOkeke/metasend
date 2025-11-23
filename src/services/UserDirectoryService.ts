@@ -139,6 +139,30 @@ class UserDirectoryService {
     }
   }
 
+  private async getRemoteUserByWalletAddress(walletAddress: string): Promise<User | null> {
+    try {
+      const result = await this.request<{ success: boolean; user?: User }>(
+        `/api/users?walletAddress=${encodeURIComponent(walletAddress)}`
+      );
+      return result.user ?? null;
+    } catch (error) {
+      console.warn("⚠️ Failed to fetch user by wallet address:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Find a user by their wallet address
+   */
+  async findUserByWalletAddress(walletAddress: string): Promise<UserProfile | null> {
+    const user = this.useRemoteApi
+      ? await this.getRemoteUserByWalletAddress(walletAddress)
+      : await mongoDatabase.getUserByWalletAddress(walletAddress);
+    if (!user) return null;
+
+    return this.mapUserToProfile(user);
+  }
+
   /**
    * Find a user by their email address
    */

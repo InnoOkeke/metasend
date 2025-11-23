@@ -19,9 +19,9 @@ export interface UserLocation {
 export async function requestLocationPermission(): Promise<LocationPermissionStatus> {
   try {
     const { status } = await Location.requestForegroundPermissionsAsync();
-    
+
     await AsyncStorage.setItem(LOCATION_PERMISSION_KEY, status);
-    
+
     if (status === 'granted') {
       return 'granted';
     } else if (status === 'denied') {
@@ -40,7 +40,7 @@ export async function requestLocationPermission(): Promise<LocationPermissionSta
 export async function checkLocationPermission(): Promise<LocationPermissionStatus> {
   try {
     const { status } = await Location.getForegroundPermissionsAsync();
-    
+
     if (status === 'granted') {
       return 'granted';
     } else if (status === 'denied') {
@@ -59,7 +59,7 @@ export async function checkLocationPermission(): Promise<LocationPermissionStatu
 export async function getUserLocation(): Promise<UserLocation | null> {
   try {
     const permissionStatus = await checkLocationPermission();
-    
+
     if (permissionStatus !== 'granted') {
       // Return cached location if available
       const cachedCountry = await AsyncStorage.getItem(USER_COUNTRY_KEY);
@@ -95,13 +95,13 @@ export async function getUserLocation(): Promise<UserLocation | null> {
     return null;
   } catch (error) {
     console.error('Error getting user location:', error);
-    
+
     // Try to return cached location
     const cachedCountry = await AsyncStorage.getItem(USER_COUNTRY_KEY);
     if (cachedCountry) {
       return JSON.parse(cachedCountry);
     }
-    
+
     return null;
   }
 }
@@ -112,6 +112,28 @@ export async function getUserLocation(): Promise<UserLocation | null> {
 export async function getUserCountryCode(): Promise<string> {
   const location = await getUserLocation();
   return location?.countryCode || '';
+}
+
+/**
+ * Get user's location from IP address (no permission required)
+ */
+export async function getUserLocationFromIP(): Promise<UserLocation | null> {
+  try {
+    const response = await fetch('https://ipapi.co/json/');
+    const data = await response.json();
+
+    if (data.error) return null;
+
+    return {
+      country: data.country_name,
+      countryCode: data.country_code,
+      region: data.region,
+      city: data.city
+    };
+  } catch (error) {
+    console.error('Error getting IP location:', error);
+    return null;
+  }
 }
 
 /**

@@ -12,6 +12,7 @@ interface TransactionCardProps {
   transactionHash?: string;
   explorerUrl?: string; // optional, but we will default to BASE_SEPOLIA
   onPressHash?: () => void;
+  onPress?: () => void; // Make entire card clickable
   children?: React.ReactNode;
   // New props for unified card usage across gifts, tips, payments, invoices
   icon?: React.ReactNode; // small icon or avatar to display (used for gifts)
@@ -34,6 +35,7 @@ export const TransactionCard: React.FC<TransactionCardProps> = ({
   transactionHash,
   explorerUrl,
   onPressHash,
+  onPress,
   children,
   icon,
   statusText,
@@ -72,8 +74,11 @@ export const TransactionCard: React.FC<TransactionCardProps> = ({
     if (onPressHash) onPressHash();
   };
 
+  const CardWrapper = onPress ? TouchableOpacity : View;
+  const wrapperProps = onPress ? { onPress, activeOpacity: 0.7 } : {};
+
   return (
-    <View style={[styles.card, { backgroundColor: colors.cardBackground }]}> 
+    <CardWrapper style={[styles.card, { backgroundColor: colors.cardBackground }]} {...wrapperProps}>
       <View style={styles.cardContent}>
         <View style={styles.headerRow}>
           {icon ? <View style={styles.iconWrapper}>{icon}</View> : null}
@@ -112,7 +117,7 @@ export const TransactionCard: React.FC<TransactionCardProps> = ({
           </View>
         ) : null}
       </View>
-    </View>
+    </CardWrapper>
   );
 };
 

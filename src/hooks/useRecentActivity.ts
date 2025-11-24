@@ -6,7 +6,7 @@ import { getCryptoGifts, CryptoGift } from '../services/gifts';
 import { getPaymentRequests, PaymentRequest } from '../services/paymentRequests';
 import { getInvoices, Invoice } from '../services/invoices';
 import { getUsdcTransactions, BlockchainTransaction } from '../services/blockchain';
-import { useCoinbase } from '../providers/CoinbaseProvider';
+import { useAuth } from '../providers/Web3AuthProvider';
 
 export type ActivityType =
     | 'transfer-sent'
@@ -43,7 +43,7 @@ export interface ActivityItem {
 export function useRecentActivity() {
     // Debug: Print aggregated gifts and paymentRequests before mapping
     // Debug: Print raw fetched data for each activity type
-    const { profile } = useCoinbase();
+    const { profile } = useAuth();
     const walletAddress = profile?.walletAddress;
     const email = profile?.email;
     // Debug log for walletAddress

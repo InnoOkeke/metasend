@@ -4,7 +4,7 @@ import { DarkTheme, DefaultTheme, NavigationContainer, Theme } from "@react-navi
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-import { useCoinbase } from "../providers/CoinbaseProvider";
+import { useAuth } from "../providers/Web3AuthProvider";
 import { useTheme } from "../providers/ThemeProvider";
 import { SignInScreen } from "../screens/Auth/SignInScreen";
 import { BiometricUnlockScreen } from "../screens/Auth/BiometricUnlockScreen";
@@ -43,7 +43,7 @@ export type RootStackParamList = {
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export const RootNavigator: React.FC = () => {
-  const { isConnected, loading, profile, disconnect } = useCoinbase();
+  const { profile, logout, isConnected, loading } = useAuth();
   const { colors, scheme } = useTheme();
   const [isReturningUser, setIsReturningUser] = useState<boolean | null>(null);
   const [needsBiometric, setNeedsBiometric] = useState(false);
@@ -127,7 +127,7 @@ export const RootNavigator: React.FC = () => {
     setIsReturningUser(false);
 
     try {
-      await disconnect();
+      await logout();
       Alert.alert("Signed out", "You can now sign in with a different account.");
     } catch (error) {
       console.warn("Disconnect error", error);
@@ -206,7 +206,7 @@ export const RootNavigator: React.FC = () => {
     >
       {isConnected ? (
         <Stack.Navigator initialRouteName="Home" screenOptions={screenOptions}>
-          <Stack.Screen name="Home" component={HomeScreen} options={{ title: "MetaSend" }} />
+          <Stack.Screen name="Home" component={HomeScreen} options={{ title: "Oweza" }} />
           <Stack.Screen name="Send" component={SendScreen} options={{ title: "Send USDC" }} />
           <Stack.Screen
             name="InternationalTransfer"

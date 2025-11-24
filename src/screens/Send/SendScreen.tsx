@@ -4,13 +4,12 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
-import { useSendUserOperation } from "@coinbase/cdp-hooks";
 import * as LocalAuthentication from "expo-local-authentication";
 
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { TextField } from "../../components/TextField";
 import { ToastModal } from "../../components/ToastModal";
-import { useCoinbase } from "../../providers/CoinbaseProvider";
+import { useAuth } from "../../providers/Web3AuthProvider";
 import { resolveEmailToWallet } from "../../services/addressResolution";
 import { sendUsdcWithPaymaster, TransferIntent, TransferResult } from "../../services/transfers";
 import { getUsdcBalance } from "../../services/blockchain";
@@ -36,8 +35,7 @@ type FieldErrors = Partial<Record<keyof FormState, string>>;
 
 export const SendScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { profile } = useCoinbase();
-  const { sendUserOperation, status: sendStatus, error: sendError } = useSendUserOperation();
+  const { profile, sendUserOperation } = useAuth();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const queryClient = useQueryClient();
@@ -98,37 +96,19 @@ export const SendScreen: React.FC = () => {
   const mutation = useMutation({
     mutationFn: async (intent: TransferIntent) => {
       console.log("🔵 Mutation started for:", intent);
-      
+
       if (!profile?.walletAddress) {
         console.error("❌ No wallet address");
         throw new Error("Wallet not connected");
       }
-      
+
       console.log("📍 Wallet address:", profile.walletAddress);
-      
-      // Create sendUserOperation function for the transfer service
-      const sendUserOpFn = async (calls: any[]) => {
-        console.log("📞 sendUserOpFn called with calls:", calls.length);
-        try {
-          const result = await sendUserOperation({
-            evmSmartAccount: profile.walletAddress as `0x${string}`,
-            network: "base-sepolia",
-            calls,
-            useCdpPaymaster: true, // Use Coinbase Paymaster for gasless transactions
-          });
-          console.log("✅ sendUserOperation result:", result);
-          return result;
-        } catch (error) {
-          console.error("❌ sendUserOperation error:", error);
-          throw error;
-        }
-      };
-      
-      console.log("🚀 Calling sendUsdcWithPaymaster...");
+
+      console.log(" Calling sendUsdcWithPaymaster...");
       const result = await sendUsdcWithPaymaster(
         profile.walletAddress as `0x${string}`,
         intent,
-        sendUserOpFn
+        sendUserOperation
       );
       console.log("✅ Transfer result:", result);
       return result;
@@ -142,7 +122,7 @@ export const SendScreen: React.FC = () => {
       setIsConfirmModalVisible(false);
       setPendingIntent(null);
       setIsAuthenticating(false);
-      
+
       // Show toast notification
       if (payload.status === "pending_recipient_signup") {
         showToast(`Invite sent to ${form.email}. They'll receive an email to claim funds.`, "success");
@@ -178,18 +158,18 @@ export const SendScreen: React.FC = () => {
         setErrors({ email: "Email is required" });
         return null;
       }
-      
+
       if (!form.amount.trim()) {
         setErrors({ amount: "Amount is required" });
         return null;
       }
-      
+
       const amountNumber = parseFloat(form.amount);
       if (isNaN(amountNumber)) {
         setErrors({ amount: "Please enter a valid number" });
         return null;
       }
-      
+
       const parsed = FormSchema.safeParse({
         email: form.email.trim().toLowerCase(),
         amount: amountNumber,
@@ -238,9 +218,9 @@ export const SendScreen: React.FC = () => {
 
   const handleBiometricAuth = async () => {
     if (!pendingIntent) return;
-    
+
     setIsAuthenticating(true);
-    
+
     try {
       const hasHardware = await LocalAuthentication.hasHardwareAsync();
       if (!hasHardware) {
@@ -250,8 +230,8 @@ export const SendScreen: React.FC = () => {
           "Biometric authentication is not available. Do you want to proceed?",
           [
             { text: "Cancel", style: "cancel", onPress: () => setIsAuthenticating(false) },
-            { 
-              text: "Confirm", 
+            {
+              text: "Confirm",
               onPress: () => {
                 mutation.mutate(pendingIntent);
               }
@@ -269,8 +249,8 @@ export const SendScreen: React.FC = () => {
           "Biometric authentication is not set up. Do you want to proceed?",
           [
             { text: "Cancel", style: "cancel", onPress: () => setIsAuthenticating(false) },
-            { 
-              text: "Confirm", 
+            {
+              text: "Confirm",
               onPress: () => {
                 mutation.mutate(pendingIntent);
               }
@@ -308,91 +288,90 @@ export const SendScreen: React.FC = () => {
 
   const recipientInfo = useMemo(() => {
     if (!emailLookup) return null;
-    return emailLookup.isRegistered 
+    return emailLookup.isRegistered
       ? `Registered user (${emailLookup.walletAddress?.slice(0, 6)}...${emailLookup.walletAddress?.slice(-4)})`
       : "New user - will receive invite email";
   }, [emailLookup]);
 
   return (
     <View style={styles.screen}>
-      <KeyboardAvoidingView 
+      <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
       >
-        <ScrollView 
+        <ScrollView
           ref={scrollViewRef}
-          contentContainerStyle={styles.container} 
+          contentContainerStyle={styles.container}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.card}>
-          <Text style={styles.title}>Send USDC via email</Text>
-          <Text style={styles.subtitle}>
-            MetaSend resolves the recipient's wallet automatically. If they do not have an account yet, we
-            email them a redemption link to claim funds after onboarding.
-          </Text>
-
-          <TextField
-            label="Recipient email"
-            autoCapitalize="none"
-            keyboardType="email-address"
-            autoCorrect={false}
-            value={form.email}
-            onChangeText={(value) => handleChange("email", value)}
-            error={errors.email}
-          />
-          {emailLookup ? (
-            <Text style={styles.lookup}>
-              {emailLookup.isRegistered
-                ? `Registered MetaSend user. Wallet: ${emailLookup.walletAddress}`
-                : "No MetaSend account yet — transfer will queue until signup."}
+            <Text style={styles.title}>Send USDC via email</Text>
+            <Text style={styles.subtitle}>
+              MetaSend resolves the recipient's wallet automatically. If they do not have an account yet, we
+              email them a redemption link to claim funds after onboarding.
             </Text>
-          ) : resolvingEmail && emailIsValid ? (
-            <Text style={styles.lookup}>Resolving recipient wallet…</Text>
-          ) : null}
 
-          <TextField
-            label="Amount (USDC)"
-            keyboardType="numeric"
-            value={form.amount}
-            onChangeText={(value) => handleChange("amount", value)}
-            error={errors.amount}
-          />
-          
-          {usdcBalance !== undefined && (
-            <Text style={styles.balanceText}>
-              Balance: {usdcBalance.toFixed(2)} USDC
-            </Text>
-          )}
+            <TextField
+              label="Recipient email"
+              autoCapitalize="none"
+              keyboardType="email-address"
+              autoCorrect={false}
+              value={form.email}
+              onChangeText={(value) => handleChange("email", value)}
+              error={errors.email}
+            />
+            {emailLookup ? (
+              <Text style={styles.lookup}>
+                {emailLookup.isRegistered
+                  ? `Registered MetaSend user. Wallet: ${emailLookup.walletAddress}`
+                  : "No MetaSend account yet — transfer will queue until signup."}
+              </Text>
+            ) : resolvingEmail && emailIsValid ? (
+              <Text style={styles.lookup}>Resolving recipient wallet…</Text>
+            ) : null}
 
-          <TextField
-            label="Memo (optional)"
-            value={form.memo}
-            onChangeText={(value) => handleChange("memo", value)}
-            onFocus={handleMemoFocus}
-            error={errors.memo}
-            placeholder="Add a note for the recipient"
-            multiline
-            numberOfLines={2}
-          />
+            <TextField
+              label="Amount (USDC)"
+              keyboardType="numeric"
+              value={form.amount}
+              onChangeText={(value) => handleChange("amount", value)}
+              error={errors.amount}
+            />
 
-          <PrimaryButton
-            title="Review & Send"
-            onPress={handleReviewAndSend}
-            loading={mutation.isPending || sendStatus === "pending"}
-          />
+            {usdcBalance !== undefined && (
+              <Text style={styles.balanceText}>
+                Balance: {usdcBalance.toFixed(2)} USDC
+              </Text>
+            )}
 
-          {mutation.error ? (
-            <Text style={styles.error}>
-              {mutation.error instanceof Error
-                ? mutation.error.message
-                : "Something went wrong while sending the transfer."}
-            </Text>
-          ) : null}
-          {sendError ? <Text style={styles.error}>{sendError.message}</Text> : null}
-        </View>
-      </ScrollView>
+            <TextField
+              label="Memo (optional)"
+              value={form.memo}
+              onChangeText={(value) => handleChange("memo", value)}
+              onFocus={handleMemoFocus}
+              error={errors.memo}
+              placeholder="Add a note for the recipient"
+              multiline
+              numberOfLines={2}
+            />
+
+            <PrimaryButton
+              title="Review & Send"
+              onPress={handleReviewAndSend}
+              loading={mutation.isPending}
+            />
+
+            {mutation.error ? (
+              <Text style={styles.error}>
+                {mutation.error instanceof Error
+                  ? mutation.error.message
+                  : "Something went wrong while sending the transfer."}
+              </Text>
+            ) : null}
+          </View>
+        </ScrollView>
       </KeyboardAvoidingView>
 
       {/* Confirmation Modal */}
@@ -543,7 +522,7 @@ const createStyles = (colors: ColorPalette) =>
       color: colors.success,
       marginTop: spacing.sm,
     },
-    
+
     // Modal Styles
     modalOverlay: {
       flex: 1,
@@ -586,7 +565,7 @@ const createStyles = (colors: ColorPalette) =>
       color: colors.textPrimary,
       fontWeight: "600",
     },
-    
+
     // Confirmation Details
     confirmationDetails: {
       paddingHorizontal: spacing.lg,
@@ -635,7 +614,7 @@ const createStyles = (colors: ColorPalette) =>
       backgroundColor: colors.border,
       marginVertical: spacing.sm,
     },
-    
+
     // Modal Actions
     modalActions: {
       flexDirection: "row",

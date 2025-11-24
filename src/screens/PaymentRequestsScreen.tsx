@@ -3,11 +3,10 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Pressable,
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useSendUserOperation } from "@coinbase/cdp-hooks";
 import * as LocalAuthentication from "expo-local-authentication";
 
 import { RootStackParamList } from "../navigation/RootNavigator";
-import { useCoinbase } from "../providers/CoinbaseProvider";
+import { useAuth } from "../providers/Web3AuthProvider";
 import { useTheme } from "../providers/ThemeProvider";
 import { PrimaryButton } from "../components/PrimaryButton";
 import { TextField } from "../components/TextField";
@@ -21,11 +20,10 @@ import { TransactionCard } from "../components/TransactionCard";
 type Props = NativeStackScreenProps<RootStackParamList, "PaymentRequests">;
 
 export const PaymentRequestsScreen: React.FC<Props> = ({ route, navigation }) => {
-  const { profile } = useCoinbase();
+  const { profile, sendUserOperation } = useAuth();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const queryClient = useQueryClient();
-  const { sendUserOperation } = useSendUserOperation();
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showPayModal, setShowPayModal] = useState(false);
@@ -318,10 +316,12 @@ export const PaymentRequestsScreen: React.FC<Props> = ({ route, navigation }) =>
                 if (isReceived) {
                   actions.push({ label: "Pay", onPress: () => navigation.setParams({ requestId: req.requestId }) });
                 } else {
-                  actions.push({ label: "Share", onPress: () => {
-                    const link = paymentRequestService.generatePaymentRequestLink(req.requestId);
-                    Share.share({ message: `Pay me: ${link}` });
-                  }});
+                  actions.push({
+                    label: "Share", onPress: () => {
+                      const link = paymentRequestService.generatePaymentRequestLink(req.requestId);
+                      Share.share({ message: `Pay me: ${link}` });
+                    }
+                  });
 
                   // Creator can cancel their pending request
                   actions.push({

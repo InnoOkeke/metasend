@@ -14,7 +14,7 @@ import {
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/RootNavigator";
 import { useTheme } from "../providers/ThemeProvider";
-import { useCoinbase } from "../providers/CoinbaseProvider";
+import { useAuth } from "../providers/Web3AuthProvider";
 import { spacing, typography } from "../utils/theme";
 import { getUserLocation } from "../services/location";
 
@@ -22,7 +22,7 @@ type Props = NativeStackScreenProps<RootStackParamList, "Deposit">;
 
 export const DepositScreen: React.FC<Props> = ({ navigation }) => {
   const { colors } = useTheme();
-  const { profile } = useCoinbase();
+  const { profile } = useAuth();
   const [activeMethod, setActiveMethod] = useState<"bank" | "card">("bank");
   const [amount, setAmount] = useState("");
   const [showMethodOptions, setShowMethodOptions] = useState(false);

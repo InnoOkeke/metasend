@@ -5,11 +5,11 @@ import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RootStackParamList } from "../navigation/RootNavigator";
-import { useCoinbase } from "../providers/CoinbaseProvider";
+import { useAuth } from "../providers/Web3AuthProvider";
 import { useTheme } from "../providers/ThemeProvider";
 import { PrimaryButton } from "../components/PrimaryButton";
 import { TextField } from "../components/TextField";
-import { useSendUserOperation } from "@coinbase/cdp-hooks";
+
 import { cryptoGiftService, CreateGiftInput, GiftSummary } from "../services/CryptoGiftService";
 import { sendUsdcWithPaymaster, TransferIntent } from "../services/transfers";
 import { GiftTheme } from "../types/database";
@@ -22,10 +22,9 @@ import { getUsdcBalance } from "../services/blockchain";
 type Props = NativeStackScreenProps<RootStackParamList, "Gifts">;
 
 export const GiftsScreen: React.FC<Props> = ({ navigation }) => {
-  const { profile } = useCoinbase();
+  const { profile, sendUserOperation } = useAuth();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const { sendUserOperation } = useSendUserOperation();
   const queryClient = useQueryClient();
 
   const [showCreateModal, setShowCreateModal] = useState(false);

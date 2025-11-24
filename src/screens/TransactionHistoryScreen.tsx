@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity, ScrollView, Alert }
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { useCoinbase } from "../providers/CoinbaseProvider";
+import { useAuth } from "../providers/Web3AuthProvider";
 import { useTheme } from "../providers/ThemeProvider";
 import { RootStackParamList } from "../navigation/RootNavigator";
 import { spacing, typography } from "../utils/theme";
@@ -33,7 +33,7 @@ const pendingStatusLabels: Record<PendingTransferSummary["status"], string> = {
 };
 
 export const TransactionHistoryScreen: React.FC<Props> = ({ navigation }) => {
-  const { profile } = useCoinbase();
+  const { profile } = useAuth();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [activeTab, setActiveTab] = useState<TabType>("all");

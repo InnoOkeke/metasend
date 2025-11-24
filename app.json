@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "metasend",
+    "name": "Oweza",
     "slug": "metasend",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -20,7 +20,7 @@
         "applinks:metasend.vercel.app"
       ],
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "MetaSend uses your location to show region-specific payment providers like Paycrest for African users."
+        "NSLocationWhenInUseUsageDescription": "Oweza uses your location to show region-specific payment providers like Paycrest for African users."
       }
     },
     "android": {
@@ -72,14 +72,11 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "MetaSend uses your location to show region-specific payment providers like Paycrest for African users."
+          "locationAlwaysAndWhenInUsePermission": "Oweza uses your location to show region-specific payment providers like Paycrest for African users."
         }
       ]
     ],
     "extra": {
-      "coinbaseAppId": "162ddeb1-c67e-43fa-b38b-78a916eb7cde",
-      "coinbaseOAuthClientId": "YOUR-COINBASE-OAUTH-CLIENT-ID",
-      "coinbaseRedirectScheme": "metasend",
       "appUrl": "https://metasend.vercel.app",
       "metasendApiBaseUrl": "http://10.0.2.2:3000"
     }

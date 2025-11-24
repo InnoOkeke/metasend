@@ -18,8 +18,11 @@ export default ({ config }) => ({
     coinbaseApiKey: process.env.COINBASE_API_KEY || "",
     coinbaseApiSecret: process.env.COINBASE_API_SECRET || "",
 
-    // Coinbase Paymaster
-    coinbasePaymasterApiKey: process.env.COINBASE_PAYMASTER_API_KEY || "",
+    // Web3Auth Configuration
+    web3AuthClientId: process.env.WEB3AUTH_CLIENT_ID || "",
+
+    // Circle Configuration
+    circleApiKey: process.env.CIRCLE_API_KEY || "TEST_API_KEY:057a0d954d6cf4e928bc81ef6260b363:d00b829867e430f09d861d6e3ff372d8",
 
     // Ramp Providers
     moonpayApiKey: process.env.MOONPAY_API_KEY || "",
@@ -32,19 +35,6 @@ export default ({ config }) => ({
     mercuryoApiKey: process.env.MERCURYO_API_KEY || "placeholder",
     payantApiKey: process.env.PAYANT_API_KEY || "placeholder",
     paybisApiKey: process.env.PAYBIS_API_KEY || "placeholder",
-
-    // Email Service
-    sendgridApiKey: process.env.SENDGRID_API_KEY || "",
-    resendApiKey: process.env.RESEND_API_KEY || "",
-    awsSesRegion: process.env.AWS_SES_REGION || "",
-    awsSesAccessKey: process.env.AWS_SES_ACCESS_KEY || "",
-    awsSesSecretKey: process.env.AWS_SES_SECRET_KEY || "",
-
-    // App Configuration
-    appUrl: process.env.APP_URL || "",
-    supportEmail: process.env.SUPPORT_EMAIL || "",
-
-    // Escrow Configuration
     escrowMockMode: (process.env.ESCROW_USE_MOCK || "true") !== "false",
     pendingTransferExpiryDays: parseInt(process.env.PENDING_TRANSFER_EXPIRY_DAYS || "7", 10),
 

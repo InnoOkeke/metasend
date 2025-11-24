@@ -6,7 +6,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { WebView } from "react-native-webview";
 
 import { ToastModal } from "../components/ToastModal";
-import { useCoinbase } from "../providers/CoinbaseProvider";
+import { useAuth } from "../providers/Web3AuthProvider";
 import { useTheme } from "../providers/ThemeProvider";
 import { listTransfers, TransferRecord } from "../services/transfers";
 import { getUsdcBalance, getUsdcTransactions, type BlockchainTransaction } from "../services/blockchain";
@@ -42,7 +42,7 @@ import { TransactionDetailsModal } from "../components/TransactionDetailsModal";
 export type HomeScreenProps = NativeStackScreenProps<RootStackParamList, "Home">;
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
-  const { profile, disconnect } = useCoinbase();
+  const { profile, logout } = useAuth();
   // Hide header for this screen
   React.useLayoutEffect(() => {
     navigation.setOptions({ headerShown: false });

@@ -2,10 +2,10 @@ import React, { useMemo, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, Alert, ActivityIndicator, TouchableOpacity, Share, Clipboard, Linking } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useSendUserOperation } from "@coinbase/cdp-hooks";
+
 import * as LocalAuthentication from "expo-local-authentication";
 import { RootStackParamList } from "../navigation/RootNavigator";
-import { useCoinbase } from "../providers/CoinbaseProvider";
+import { useAuth } from "../providers/Web3AuthProvider";
 import { useTheme } from "../providers/ThemeProvider";
 import { PrimaryButton } from "../components/PrimaryButton";
 import { invoiceService } from "../services/InvoiceService";
@@ -19,10 +19,10 @@ import { TransactionCard } from "../components/TransactionCard";
 type Props = NativeStackScreenProps<RootStackParamList, "Invoices">;
 
 export const InvoicesScreen: React.FC<Props> = ({ route, navigation }) => {
-  const { profile } = useCoinbase();
+  const { profile, sendUserOperation } = useAuth();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const { sendUserOperation } = useSendUserOperation();
+
 
   const [showPayModal, setShowPayModal] = useState(false);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
@@ -56,18 +56,12 @@ export const InvoicesScreen: React.FC<Props> = ({ route, navigation }) => {
       setShowPayModal(true);
     }
   }, [deepLinkInvoice]);
-
   const payInvoiceMutation = useMutation({
     mutationFn: async () => {
       if (!profile?.walletAddress || !deepLinkInvoice) throw new Error("Not ready");
 
       const sendUserOpFn = async (calls: any[]) => {
-        return await sendUserOperation({
-          evmSmartAccount: profile.walletAddress as `0x${string}`,
-          network: "base-sepolia",
-          calls,
-          useCdpPaymaster: true,
-        });
+        return await sendUserOperation(calls);
       };
 
       const intent: TransferIntent = {
@@ -180,14 +174,18 @@ export const InvoicesScreen: React.FC<Props> = ({ route, navigation }) => {
             const actions: Array<any> = [];
             // Only show actions for invoices that are not paid or cancelled
             if (inv.status !== 'paid' && inv.status !== 'cancelled') {
-              actions.push({ label: "Share", onPress: () => {
-                const link = invoiceService.generateInvoiceLink(inv.invoiceId);
-                Share.share({ message: `Invoice #${inv.invoiceNumber}: ${link}` });
-              }});
-              actions.push({ label: "Copy Link", onPress: () => {
-                Clipboard.setString(invoiceService.generateInvoiceLink(inv.invoiceId));
-                Alert.alert("Copied", "Link copied to clipboard");
-              }});
+              actions.push({
+                label: "Share", onPress: () => {
+                  const link = invoiceService.generateInvoiceLink(inv.invoiceId);
+                  Share.share({ message: `Invoice #${inv.invoiceNumber}: ${link}` });
+                }
+              });
+              actions.push({
+                label: "Copy Link", onPress: () => {
+                  Clipboard.setString(invoiceService.generateInvoiceLink(inv.invoiceId));
+                  Alert.alert("Copied", "Link copied to clipboard");
+                }
+              });
             }
 
             const isSender = inv.creatorEmail === profile?.email;

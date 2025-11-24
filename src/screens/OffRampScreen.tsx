@@ -6,7 +6,7 @@ import { WebView } from "react-native-webview";
 import { PrimaryButton } from "../components/PrimaryButton";
 import { RootStackParamList } from "../navigation/RootNavigator";
 import { useTheme } from "../providers/ThemeProvider";
-import { useCoinbase } from "../providers/CoinbaseProvider";
+import { useAuth } from "../providers/Web3AuthProvider";
 import type { ColorPalette } from "../utils/theme";
 import { spacing, typography } from "../utils/theme";
 import {
@@ -24,7 +24,7 @@ export type OffRampScreenProps = NativeStackScreenProps<RootStackParamList, "Off
 
 export const OffRampScreen: React.FC<OffRampScreenProps> = () => {
   const { colors } = useTheme();
-  const { profile } = useCoinbase();
+  const { profile } = useAuth();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const [selectedProvider, setSelectedProvider] = useState<RampProvider | null>(null);
@@ -46,7 +46,7 @@ export const OffRampScreen: React.FC<OffRampScreenProps> = () => {
   const handleProviderSelect = (provider: RampProvider) => {
     setSelectedProvider(provider);
     const info = getProviderInfo(provider);
-    
+
     // If provider supports payment methods, show payment method selection
     if (info.supportsPaymentMethods) {
       setSelectedPaymentMethod(null);
@@ -127,7 +127,7 @@ export const OffRampScreen: React.FC<OffRampScreenProps> = () => {
             {availableProviders.map((provider) => {
               const info = getProviderInfo(provider);
               const canUse = selectedRampType === "onramp" ? info.supportsBuy : info.supportsSell;
-              
+
               if (!canUse) return null;
 
               return (
@@ -153,7 +153,7 @@ export const OffRampScreen: React.FC<OffRampScreenProps> = () => {
             <Pressable style={styles.backButton} onPress={() => setSelectedProvider(null)}>
               <Text style={styles.backButtonText}>← Back to providers</Text>
             </Pressable>
-            
+
             <Text style={styles.sectionTitle}>Select Payment Method</Text>
             {availablePaymentMethods.map((method) => (
               <Pressable
@@ -184,23 +184,25 @@ export const OffRampScreen: React.FC<OffRampScreenProps> = () => {
               <Text style={styles.closeButtonText}>✕</Text>
             </Pressable>
           </View>
-          
+
           {webViewLoading && (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={colors.primary} />
               <Text style={styles.loadingText}>Loading...</Text>
             </View>
           )}
-          
+
           <WebView
-            source={{ uri: buildRampUrl({
-              provider: selectedProvider!,
-              type: selectedRampType,
-              walletAddress: profile?.walletAddress ?? "",
-              assetSymbol: "USDC",
-              destinationNetwork: "base",
-              paymentMethod: selectedPaymentMethod ?? undefined,
-            }) }}
+            source={{
+              uri: buildRampUrl({
+                provider: selectedProvider!,
+                type: selectedRampType,
+                walletAddress: profile?.walletAddress ?? "",
+                assetSymbol: "USDC",
+                destinationNetwork: "base",
+                paymentMethod: selectedPaymentMethod ?? undefined,
+              })
+            }}
             style={styles.webView}
             onLoadStart={() => setWebViewLoading(true)}
             onLoadEnd={() => setWebViewLoading(false)}

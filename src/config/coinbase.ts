@@ -29,6 +29,7 @@ export const USDC_DECIMALS = 6;
 // Coinbase Paymaster API
 export const PAYMASTER_API_URL = "https://api.developer.coinbase.com/rpc/v1/base-sepolia";
 
+
 export const COINBASE_OAUTH_SCOPES = [
   "wallet:user:read",
   "wallet:accounts:read",

@@ -42,7 +42,7 @@ export const BiometricUnlockScreen: React.FC<BiometricUnlockScreenProps> = ({
       } else {
         setBiometricType("Device");
       }
-      
+
       // Auto-trigger authentication on mount
       setTimeout(() => handleBiometricAuth(), 500);
     }
@@ -50,7 +50,7 @@ export const BiometricUnlockScreen: React.FC<BiometricUnlockScreenProps> = ({
 
   const handleBiometricAuth = async () => {
     setIsAuthenticating(true);
-    
+
     try {
       const hasHardware = await LocalAuthentication.hasHardwareAsync();
       if (!hasHardware) {
@@ -71,7 +71,7 @@ export const BiometricUnlockScreen: React.FC<BiometricUnlockScreenProps> = ({
       }
 
       const result = await LocalAuthentication.authenticateAsync({
-        promptMessage: "Unlock MetaSend",
+        promptMessage: "Unlock Oweza",
         fallbackLabel: "Use Passcode",
         disableDeviceFallback: false,
       });
@@ -98,7 +98,7 @@ export const BiometricUnlockScreen: React.FC<BiometricUnlockScreenProps> = ({
 
         <Text style={styles.title}>Welcome Back</Text>
         {userEmail && <Text style={styles.email}>{userEmail}</Text>}
-        
+
         <Text style={styles.subtitle}>
           Unlock your wallet with {biometricType.toLowerCase()}
         </Text>

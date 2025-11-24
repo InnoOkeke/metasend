@@ -3,10 +3,9 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Alert, Sha
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useSendUserOperation } from "@coinbase/cdp-hooks";
 import * as LocalAuthentication from "expo-local-authentication";
 import { RootStackParamList } from "../navigation/RootNavigator";
-import { useCoinbase } from "../providers/CoinbaseProvider";
+import { useAuth } from "../providers/Web3AuthProvider";
 import { useTheme } from "../providers/ThemeProvider";
 import { PrimaryButton } from "../components/PrimaryButton";
 import { TextField } from "../components/TextField";
@@ -22,13 +21,11 @@ import { spacing, typography } from "../utils/theme";
 type Props = NativeStackScreenProps<RootStackParamList, "Tipping">;
 
 const SUGGESTED_TIPS = [1, 5, 10, 25, 50, 100];
-
 export const TippingScreen: React.FC<Props> = ({ route, navigation }) => {
-  const { profile } = useCoinbase();
+  const { profile, sendUserOperation } = useAuth();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
-  const { sendUserOperation } = useSendUserOperation();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showTipModal, setShowTipModal] = useState(false);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
@@ -169,11 +166,8 @@ export const TippingScreen: React.FC<Props> = ({ route, navigation }) => {
       const usedAmount = amountArg ?? tipAmount;
       if (!profile?.walletAddress || !deepLinkJar) throw new Error("Not ready");
       if (!usedAmount || isNaN(parseFloat(usedAmount))) throw new Error("Invalid amount");
-      // Check balance locally before attempting on-chain send
-      const numeric = parseFloat(usedAmount);
-      if (usdcBalance !== null && usdcBalance !== undefined && numeric > usdcBalance) {
-        throw new Error("Insufficient funds");
-      }
+
+      // Create sendUserOperation callback
       const sendUserOpFn = async (calls: any[]) => {
         return await sendUserOperation({
           evmSmartAccount: profile.walletAddress as `0x${string}`,
@@ -183,6 +177,7 @@ export const TippingScreen: React.FC<Props> = ({ route, navigation }) => {
         });
       };
 
+      // Create transfer intent
       const intent: TransferIntent = {
         recipientEmail: deepLinkJar.creatorEmail,
         amountUsdc: parseFloat(usedAmount),

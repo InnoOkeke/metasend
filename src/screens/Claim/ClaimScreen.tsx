@@ -5,7 +5,7 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useMutation } from "@tanstack/react-query";
 
 import { PrimaryButton } from "../../components/PrimaryButton";
-import { useCoinbase } from "../../providers/CoinbaseProvider";
+import { useAuth } from "../../providers/Web3AuthProvider";
 import { useTheme } from "../../providers/ThemeProvider";
 import { getTransferDetails, claimPendingTransfer, type PendingTransferDetails } from "../../services/api";
 import { PendingTransfer } from "../../types/database";
@@ -19,7 +19,7 @@ type ClaimScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, "
 export const ClaimScreen: React.FC = () => {
   const route = useRoute<ClaimScreenRouteProp>();
   const navigation = useNavigation<ClaimScreenNavigationProp>();
-  const { profile, isConnected } = useCoinbase();
+  const { profile, isConnected } = useAuth();
   const { colors } = useTheme();
   const styles = React.useMemo(() => createStyles(colors), [colors]);
 
@@ -43,7 +43,7 @@ export const ClaimScreen: React.FC = () => {
       setLoading(true);
       setError(null);
       const details = await getTransferDetails(transferId);
-      
+
       if (!details) {
         setError("Transfer not found");
       } else if (details.status !== "pending") {

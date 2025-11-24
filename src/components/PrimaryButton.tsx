@@ -12,12 +12,13 @@ export type PrimaryButtonProps = {
   variant?: "primary" | "accent";
 };
 
-export const PrimaryButton: React.FC<PrimaryButtonProps> = ({
+export const PrimaryButton: React.FC<PrimaryButtonProps & { style?: any }> = ({
   title,
   onPress,
   disabled,
   loading,
   variant = "primary",
+  style,
 }) => {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -34,6 +35,7 @@ export const PrimaryButton: React.FC<PrimaryButtonProps> = ({
         palette,
         (disabled || loading) && disabledStyle,
         pressed && !disabled && !loading && styles.buttonPressed,
+        style,
       ]}
     >
       {loading ? <ActivityIndicator color={colors.inverseText} /> : <Text style={styles.buttonText}>{title}</Text>}
@@ -47,7 +49,6 @@ const createStyles = (colors: ColorPalette) =>
       paddingVertical: 14,
       borderRadius: 12,
       alignItems: "center",
-      alignSelf: "stretch",
     },
     primaryButton: {
       backgroundColor: colors.primary,

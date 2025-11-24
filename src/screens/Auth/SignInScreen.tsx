@@ -1,253 +1,176 @@
 import React, { useMemo, useState } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { useSignInWithEmail, useVerifyEmailOTP, useIsSignedIn, CDPContext } from "@coinbase/cdp-hooks";
+import {
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  ImageBackground,
+  TouchableOpacity,
+  Modal,
+} from "react-native";
 
+import { useAuth } from "../../providers/Web3AuthProvider";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { useTheme } from "../../providers/ThemeProvider";
 import type { ColorPalette } from "../../utils/theme";
-import { typography } from "../../utils/theme";
 
-type AuthMethod = "email";
-type AuthStep = "method" | "otp";
+const BgImage = require("../../../assets/bg.png");
 
 export const SignInScreen: React.FC = () => {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  
-  const cdpContext = React.useContext(CDPContext);
-  const { isSignedIn } = useIsSignedIn();
-  const { signInWithEmail } = useSignInWithEmail();
-  const { verifyEmailOTP } = useVerifyEmailOTP();
-  
-  const [step, setStep] = useState<AuthStep>("method");
-  const [authMethod, setAuthMethod] = useState<AuthMethod | null>(null);
+
+  const { login, loading, error, isConnected, profile } = useAuth();
   const [email, setEmail] = useState("");
-  const [otp, setOtp] = useState("");
-  const [flowId, setFlowId] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [modalVisible, setModalVisible] = useState(false);
 
-  // Check if CDP is initialized
-  React.useEffect(() => {
-    if (!cdpContext) {
-      setError("Wallet SDK not initialized. Please check your configuration.");
-    }
-  }, [cdpContext]);
-
-  const handleEmailSubmit = async () => {
-    if (!email.trim()) {
-      setError("Please enter your email");
-      return;
-    }
-    
-    setError(null);
-    setLoading(true);
-    setAuthMethod("email");
-    
-    try {
-      const result = await signInWithEmail({ email: email.trim() });
-      setFlowId(result.flowId);
-      setStep("otp");
-    } catch (err) {
-      console.error("Email sign-in error:", err);
-      setError(err instanceof Error ? err.message : "Failed to send verification email");
-      setAuthMethod(null);
-    } finally {
-      setLoading(false);
-    }
+  const handleEmailLogin = async () => {
+    if (!email.trim()) return;
+    await login("email_passwordless", email.trim());
   };
 
-  const handleOtpSubmit = async () => {
-    if (!otp.trim()) {
-      setError("Please enter the verification code");
-      return;
-    }
-    
-    setError(null);
-    setLoading(true);
-    
-    try {
-      await verifyEmailOTP({ flowId, otp: otp.trim() });
-      // User will be signed in, isSignedIn will become true
-    } catch (err) {
-      console.error("OTP verification error:", err);
-      setError(err instanceof Error ? err.message : "Invalid verification code");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const handleGoogleLogin = async () => await login("google");
+  const handleAppleLogin = async () => await login("apple");
 
-  if (isSignedIn && cdpContext?.currentUser) {
-    const walletAddress = cdpContext.currentUser.evmSmartAccounts?.[0];
-    const authMethods = cdpContext.currentUser.authenticationMethods;
-    const userEmail = authMethods.email?.email || authMethods.google?.email || authMethods.apple?.email;
-    
+  if (isConnected && profile) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.title}>✅ Signed In</Text>
-        <Text style={styles.subtitle}>Smart account: {walletAddress || "Unavailable"}</Text>
-        {userEmail && <Text style={styles.subtitle}>Email: {userEmail}</Text>}
-        <Text style={styles.subtitle}>User ID: {cdpContext.currentUser.userId}</Text>
-      </View>
+      <ImageBackground source={BgImage} style={styles.bgImage} resizeMode="cover">
+        <View style={styles.containerCenter}>
+          <Text style={styles.title}>✅ Signed In</Text>
+          <Text style={styles.titleBold}>Wallet: {profile.walletAddress}</Text>
+          <Text style={styles.titleBold}>Email: {profile.email}</Text>
+        </View>
+      </ImageBackground>
     );
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 64 : 0}
-    >
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
+    <ImageBackground source={BgImage} style={styles.bgImage} resizeMode="cover">
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.container}
       >
-        <Text style={styles.title}>MetaSend</Text>
-        <Text style={styles.subtitle}>Send USDC to any email. Base Sepolia testnet, gasless via Coinbase Paymaster.</Text>
+        <View style={styles.bottomContent}>
+          <View style={styles.buttonSection}>
+            {Platform.OS === "android" && (
+              <PrimaryButton
+                title="Continue with Google"
+                onPress={handleGoogleLogin}
+                loading={loading}
+                disabled={loading}
+                style={styles.socialButton}
+              />
+            )}
 
-        <View style={styles.card}>
-        <Text style={styles.cardTitle}>Get started</Text>
-        <Text style={styles.cardBody}>
-          Sign in with email to create your embedded smart wallet.
-        </Text>
-        
-        {step === "method" && (
-          <View style={styles.section}>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter your email"
-              placeholderTextColor={colors.textSecondary}
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              editable={!loading}
-            />
-            <PrimaryButton
-              title="Continue with Email"
-              onPress={handleEmailSubmit}
-              loading={loading && authMethod === "email"}
-              disabled={loading}
-            />
-          </View>
-        )}
+            {Platform.OS === "ios" && (
+              <PrimaryButton
+                title="Continue with Apple"
+                onPress={handleAppleLogin}
+                loading={loading}
+                disabled={loading}
+                style={[styles.socialButton, { backgroundColor: "#000" }]}
+              />
+            )}
 
-        {step === "otp" && (
-          <>
-            <Text style={styles.otpInfo}>
-              We sent a verification code to {email}
-            </Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter 6-digit code"
-              placeholderTextColor={colors.textSecondary}
-              value={otp}
-              onChangeText={setOtp}
-              keyboardType="number-pad"
-              maxLength={6}
-              editable={!loading}
-            />
-            <PrimaryButton
-              title="Verify Code"
-              onPress={handleOtpSubmit}
-              loading={loading}
-            />
             <TouchableOpacity
-              onPress={() => {
-                setStep("method");
-                setOtp("");
-                setError(null);
-                setAuthMethod(null);
-              }}
+              style={styles.emailOutlineBtn}
+              onPress={() => setModalVisible(true)}
               disabled={loading}
-              style={styles.backButton}
             >
-              <Text style={styles.backButtonText}>← Back to sign in</Text>
+              <Text style={styles.emailOutlineText}>Continue with Email</Text>
             </TouchableOpacity>
-          </>
-        )}
 
-        {loading && (
-          <View style={styles.hintRow}>
-            <ActivityIndicator color={colors.textSecondary} size="small" />
-            <Text style={styles.hintText}>
-              {authMethod === "email" && step === "method" && "Sending verification email..."}
-              {authMethod === "email" && step === "otp" && "Verifying code..."}
-            </Text>
+            {error && <Text style={styles.errorText}>{error}</Text>}
           </View>
-        )}
-        
-        {error && <Text style={styles.errorText}>{error}</Text>}
-      </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+
+          <Text style={styles.disclaimer}>
+            By proceeding, you agree to our <Text style={styles.link}>terms of service</Text> and{" "}
+            <Text style={styles.link}>privacy policy</Text>, built on Base.
+          </Text>
+        </View>
+
+        {/* MODAL POPUP */}
+        <Modal
+          transparent
+          visible={modalVisible}
+          animationType="slide"
+          onRequestClose={() => setModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalBox}>
+              <TouchableOpacity style={styles.closeButton} onPress={() => setModalVisible(false)}>
+                <Text style={styles.closeButtonText}>✕</Text>
+              </TouchableOpacity>
+
+              <Text style={styles.modalTitle}>Sign in with Email</Text>
+
+              <TextInput
+                style={styles.input}
+                placeholder="Enter your email"
+                placeholderTextColor={colors.textSecondary}
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                editable={!loading}
+              />
+
+              <PrimaryButton
+                title="Continue"
+                onPress={handleEmailLogin}
+                loading={loading}
+                disabled={loading || !email.trim()}
+                style={{ width: "100%" }}
+              />
+            </View>
+          </View>
+        </Modal>
+      </KeyboardAvoidingView>
+    </ImageBackground>
   );
 };
 
 const createStyles = (colors: ColorPalette) =>
   StyleSheet.create({
+    bgImage: {
+      flex: 1,
+      width: "100%",
+      height: "100%",
+    },
     container: {
       flex: 1,
-      backgroundColor: colors.background,
     },
-    scrollContent: {
-      flexGrow: 1,
-      alignItems: "center",
-      justifyContent: "center",
-      paddingHorizontal: 24,
-      paddingVertical: 32,
-    },
-    title: {
-      ...typography.title,
-      color: colors.textPrimary,
-      marginBottom: 12,
-    },
-    subtitle: {
-      ...typography.body,
-      color: colors.textSecondary,
-      textAlign: "center",
-      marginBottom: 32,
-      maxWidth: 320,
-    },
-    card: {
-      width: "100%",
-      backgroundColor: colors.cardBackground,
-      padding: 24,
-      borderRadius: 18,
-      rowGap: 16,
-    },
-    cardTitle: {
-      ...typography.subtitle,
-      color: colors.textPrimary,
-    },
-    cardBody: {
-      ...typography.body,
-      color: colors.textSecondary,
-    },
-    section: {
-      rowGap: 12,
-    },
-    sectionLabel: {
-      ...typography.subtitle,
-      color: colors.textPrimary,
-      fontSize: 14,
-      marginBottom: 4,
-    },
-    divider: {
-      flexDirection: "row",
-      alignItems: "center",
-      marginVertical: 8,
-    },
-    dividerLine: {
+    bottomContent: {
       flex: 1,
-      height: 1,
-      backgroundColor: colors.border,
+      justifyContent: "flex-end", // push everything to the bottom
+      paddingHorizontal: 24,
+      paddingBottom: 32,
+      width: "100%",
     },
-    dividerText: {
-      ...typography.body,
-      color: colors.textSecondary,
-      paddingHorizontal: 12,
-      fontSize: 12,
+    buttonSection: {
+      gap: 16,
+      width: "100%",
+    },
+    socialButton: {
+      width: "100%",
+      backgroundColor: "#ffffff",
+      borderRadius: 24,
+    },
+    emailOutlineBtn: {
+      width: "100%",
+      paddingVertical: 16,
+      borderRadius: 24,
+      borderWidth: 1,
+      borderColor: "#FFFFFF",
+      alignItems: "center",
+      backgroundColor: "transparent",
+    },
+    emailOutlineText: {
+      color: "#FFFFFF",
+      fontSize: 16,
+      fontWeight: "500",
     },
     input: {
       backgroundColor: colors.background,
@@ -257,30 +180,60 @@ const createStyles = (colors: ColorPalette) =>
       padding: 16,
       color: colors.textPrimary,
       fontSize: 16,
+      width: "100%",
     },
-    otpInfo: {
-      ...typography.body,
-      color: colors.textPrimary,
-      textAlign: "center",
-    },
-    backButton: {
-      padding: 12,
-      alignItems: "center",
-    },
-    backButtonText: {
-      ...typography.body,
-      color: colors.primary,
-    },
-    hintRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      columnGap: 8,
-    },
-    hintText: {
+    disclaimer: {
+      fontSize: 13,
       color: colors.textSecondary,
+      textAlign: "center",
+      marginTop: 16,
+    },
+    link: {
+      color: colors.primary,
+      textDecorationLine: "underline",
+    },
+    title: { fontSize: 28 },
+    titleBold: { fontSize: 32 },
+    containerCenter: {
+      flex: 1,
+      justifyContent: "center",
+      alignItems: "center",
     },
     errorText: {
       color: colors.error,
-      fontSize: 14,
+      textAlign: "center",
+      marginTop: 12,
+    },
+
+    /** MODAL **/
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: "rgba(0,0,0,0.6)",
+      justifyContent: "center",
+      alignItems: "center",
+      paddingHorizontal: 24,
+    },
+    modalBox: {
+      width: "100%",
+      backgroundColor: colors.cardBackground || "#fff",
+      padding: 24,
+      borderRadius: 16,
+      alignItems: "center",
+      gap: 16,
+    },
+    modalTitle: {
+      fontSize: 18,
+      fontWeight: "600",
+      color: colors.textPrimary,
+    },
+    closeButton: {
+      position: "absolute",
+      top: 12,
+      right: 12,
+      zIndex: 10,
+    },
+    closeButtonText: {
+      fontSize: 22,
+      color: colors.textPrimary,
     },
   });

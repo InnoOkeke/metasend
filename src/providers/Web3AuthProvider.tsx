@@ -9,6 +9,19 @@ import { privateKeyToAccount } from "viem/accounts";
 import { registerUser, autoClaimPendingTransfers } from "../services/api";
 import { circleService } from "../services/circleService";
 import Constants from "expo-constants";
+// Ensure randomBytes available on browserCrypto at module load time
+try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const cryptoShim = require('../crypto-polyfill').default || require('../crypto-polyfill');
+    if (!(global as any).browserCrypto) {
+        (global as any).browserCrypto = (global as any).crypto || cryptoShim;
+    }
+    if (!(global as any).browserCrypto.randomBytes && cryptoShim?.randomBytes) {
+        (global as any).browserCrypto.randomBytes = cryptoShim.randomBytes;
+    }
+} catch (e) {
+    // ignore if shim not available
+}
 
 const SCHEME = "metasend";
 
@@ -67,7 +80,14 @@ export const Web3AuthProvider: React.FC<React.PropsWithChildren> = ({ children }
         const init = async () => {
             try {
                 setLoading(true);
-                console.log("🔄 Starting Web3Auth initialization...");
+                    console.log("🔄 Starting Web3Auth initialization...");
+                    // Debug: log browserCrypto availability
+                    try {
+                        // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+                        console.log("debug browserCrypto:", typeof (global as any).browserCrypto, "hasRandomBytes:", typeof (global as any).browserCrypto?.randomBytes);
+                    } catch (logErr) {
+                        console.warn("Could not read browserCrypto:", logErr);
+                    }
                 const clientId = getWeb3AuthClientId();
                 console.log("🆔 Client ID retrieved");
 

@@ -63,9 +63,9 @@ export function useRecentActivity() {
 
     // 2. Tips
     const { data: tips = [] } = useQuery({
-        queryKey: ['tips', walletAddress],
-        queryFn: () => walletAddress ? getTips(walletAddress) : [],
-        enabled: !!walletAddress,
+        queryKey: ['tips', walletAddress, email],
+        queryFn: () => (walletAddress || email) ? getTips(walletAddress, email) : [],
+        enabled: !!(walletAddress || email),
     });
 
     // 3. Gifts
@@ -98,13 +98,6 @@ export function useRecentActivity() {
 
     const activities = useMemo(() => {
         const allActivities: ActivityItem[] = [];
-        console.log('[useRecentActivity] Wallet:', walletAddress, 'Email:', email);
-        console.log('[useRecentActivity] Raw Tips:', JSON.stringify(tips, null, 2));
-        console.log('[useRecentActivity] Raw Gifts:', JSON.stringify(gifts, null, 2));
-        console.log('[useRecentActivity] Raw PaymentRequests:', JSON.stringify(paymentRequests, null, 2));
-        console.log('[useRecentActivity] Raw Invoices:', JSON.stringify(invoices, null, 2));
-        console.log('[useRecentActivity] Raw Transfers:', transfers?.length);
-        console.log('[useRecentActivity] Raw BlockchainTxs:', blockchainTxs?.length);
 
         // const isAAWallet = !!(walletAddress && walletAddress.toLowerCase().startsWith('0x'));
         // if (!isAAWallet) {
@@ -132,7 +125,7 @@ export function useRecentActivity() {
                 allActivities.push({
                     id: t.id,
                     type: 'tip-sent',
-                    title: 'Sent Tip',
+                    title: 'You Just Tipped 🙌',
                     subtitle: t.toEmail ? `To: ${t.toEmail}` : 'Sent via link',
                     amount: -Number(t.amount),
                     currency: t.currency || 'USDC',
@@ -169,7 +162,7 @@ export function useRecentActivity() {
                 allActivities.push({
                     id: `${g.id}-sent`,
                     type: 'gift-sent',
-                    title: `Gift sent`,
+                    title: `Gift sent 🎁`,
                     subtitle: g.toName ? `To: ${g.toName}` : `To: ${g.toEmail}`,
                     amount: -amount,
                     currency: g.currency,
@@ -183,7 +176,7 @@ export function useRecentActivity() {
                 allActivities.push({
                     id: `${g.id}-received`,
                     type: 'gift-received',
-                    title: `Gift received`,
+                    title: `You Got a Gift ✨`,
                     subtitle: g.fromName ? `From: ${g.fromName}` : `From: ${g.fromEmail}`,
                     amount: amount,
                     currency: g.currency,

@@ -68,12 +68,43 @@ const persistTransferRecord = async (record: TransferRecord): Promise<void> => {
   });
 };
 
-const fetchTransferHistory = async (senderWallet: string): Promise<TransferRecord[]> => {
-  const result = await apiRequest<{ success: boolean; transfers?: TransferRecord[] }>(
-    `/api/transfers?senderWallet=${encodeURIComponent(senderWallet)}`
-  );
-  console.log("📋 Synced", (result.transfers ?? []).length, "transfers for", senderWallet.slice(0, 6));
-  return result.transfers ?? [];
+const fetchTransferHistory = async (walletAddress: string): Promise<TransferRecord[]> => {
+  // Fetch both sent and received transfers using Promise.allSettled to handle potential failures
+  // (e.g. if the backend doesn't support recipientWallet yet)
+  const results = await Promise.allSettled([
+    apiRequest<{ success: boolean; transfers?: TransferRecord[] }>(
+      `/api/transfers?senderWallet=${encodeURIComponent(walletAddress)}`
+    ),
+    apiRequest<{ success: boolean; transfers?: TransferRecord[] }>(
+      `/api/transfers?recipientWallet=${encodeURIComponent(walletAddress)}`
+    ),
+  ]);
+
+  const sentTransfers: TransferRecord[] =
+    results[0].status === 'fulfilled' ? (results[0].value.transfers ?? []) : [];
+
+  const receivedTransfers: TransferRecord[] =
+    results[1].status === 'fulfilled' ? (results[1].value.transfers ?? []) : [];
+
+  if (results[0].status === 'rejected') {
+    console.warn('⚠️ Failed to fetch sent transfers:', results[0].reason);
+  }
+  if (results[1].status === 'rejected') {
+    console.warn('⚠️ Failed to fetch received transfers:', results[1].reason);
+  }
+
+  // Merge and deduplicate by transfer ID
+  const allTransfers = [...sentTransfers];
+  const sentIds = new Set(sentTransfers.map(t => t.id));
+
+  for (const transfer of receivedTransfers) {
+    if (!sentIds.has(transfer.id)) {
+      allTransfers.push(transfer);
+    }
+  }
+
+  console.log("📋 Synced", allTransfers.length, "transfers (", sentTransfers.length, "sent,", receivedTransfers.length, "received) for", walletAddress.slice(0, 6));
+  return allTransfers;
 };
 
 export async function listTransfers(senderWallet: string): Promise<TransferRecord[]> {

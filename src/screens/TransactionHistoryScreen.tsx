@@ -186,69 +186,34 @@ export const TransactionHistoryScreen: React.FC<Props> = ({ navigation }) => {
   }, [activities, activeTab]);
 
   const renderActivity = ({ item }: { item: ActivityItem }) => {
-    const explorerUrl = Constants?.expoConfig?.extra?.BASE_EXPLORER_URL;
-
-    // Check for pending transfer specific logic
-    let subtitle = item.subtitle || "";
-    let canCancel = false;
-    let isCancelling = false;
-
-    if (item.type === "transfer-sent" && item.status === "pending") {
-      const pendingDetails = getPendingSummaryForTransfer(
-        item.id,
-        item.metadata?.to,
-        Math.abs(item.amount),
-        item.timestamp
-      );
-
-      if (pendingDetails) {
-        subtitle = `${pendingStatusLabels[pendingDetails.status]} · ${formatRelativeDate(item.timestamp)}`;
-        canCancel = pendingDetails.status === "pending";
-
-        const effectiveTransferId = pendingDetails.transferId;
-        isCancelling = Boolean(
-          cancelTransferMutation.isPending &&
-          effectiveTransferId &&
-          cancelTransferMutation.variables &&
-          (cancelTransferMutation.variables.transferId === effectiveTransferId ||
-            cancelTransferMutation.variables.placeholderId === item.id)
-        );
-      } else {
-        // Fallback if we can't find pending details but know it's pending
-        subtitle = `Pending · ${formatRelativeDate(item.timestamp)}`;
-        // Assume we can cancel if it's a pending transfer-sent
-        canCancel = true;
-      }
-    } else {
-      subtitle = `${item.status.charAt(0).toUpperCase() + item.status.slice(1)} · ${formatRelativeDate(item.timestamp)}`;
+    // Icon logic
+    let icon = null;
+    switch (item.type) {
+      case 'gift-sent':
+      case 'gift-received': icon = <Text style={{ fontSize: 20 }}>🎁</Text>; break;
+      case 'tip-sent':
+      case 'tip-received': icon = <Text style={{ fontSize: 20 }}>💸</Text>; break;
+      case 'payment-request-paid':
+      case 'payment-request-received': icon = <Text style={{ fontSize: 20 }}>📄</Text>; break;
+      case 'blockchain-received': icon = <Text style={{ fontSize: 20 }}>💰</Text>; break;
+      case 'blockchain-sent': icon = <Text style={{ fontSize: 20 }}>↗️</Text>; break;
+      case 'transfer-sent':
+      case 'transfer-received': icon = <Text style={{ fontSize: 20 }}>📧</Text>; break;
+      case 'invoice-sent':
+      case 'invoice-received': icon = <Text style={{ fontSize: 20 }}>📄</Text>; break;
+      default: icon = <Text style={{ fontSize: 20 }}>💸</Text>;
     }
 
     return (
-      <TransactionCard
-        title={item.title}
-        subtitle={subtitle}
-        amount={`${item.amount > 0 ? "+" : ""}${item.amount.toFixed(2)} ${item.currency}`}
-        date={formatRelativeDate(item.timestamp)}
-        transactionHash={item.txHash}
-        explorerUrl={explorerUrl}
-        onPress={() => {
-          setSelectedTransaction(item);
-          setModalVisible(true);
-        }}
-        onPressHash={item.txHash ? () => Linking.openURL(`${explorerUrl}/tx/${item.txHash}`) : undefined}
-      >
-        {canCancel && (
-          <TouchableOpacity
-            style={styles.cancelButton}
-            onPress={() => handleCancelTransfer(item)}
-            disabled={cancelTransferMutation.isPending}
-          >
-            <Text style={styles.cancelButtonText}>
-              {isCancelling ? "Cancelling..." : "Cancel Transfer"}
-            </Text>
-          </TouchableOpacity>
-        )}
-      </TransactionCard>
+      <TouchableOpacity onPress={() => { setSelectedTransaction(item); setModalVisible(true); }}>
+        <TransactionCard
+          icon={icon}
+          title={item.title}
+          subtitle={formatRelativeDate(new Date(item.timestamp).toISOString())}
+          amount={`${item.amount > 0 ? '+' : ''}${item.amount.toFixed(2)} ${item.currency}`}
+          transactionHash={item.txHash}
+        />
+      </TouchableOpacity>
     );
   };
 
@@ -278,7 +243,20 @@ export const TransactionHistoryScreen: React.FC<Props> = ({ navigation }) => {
 
       <FlatList
         data={filteredActivities}
-        renderItem={renderActivity}
+        renderItem={(info) => {
+          const item = info.item;
+          if (item.id === 'no-aa-wallet' || item.id === 'no-activity') {
+            return (
+              <View style={{ alignItems: 'center', marginTop: 32 }}>
+                <Text style={{ fontSize: 16, color: '#888' }}>{item.title}</Text>
+                {item.subtitle && (
+                  <Text style={{ fontSize: 14, color: '#aaa', marginTop: 8 }}>{item.subtitle}</Text>
+                )}
+              </View>
+            );
+          }
+          return renderActivity(info);
+        }}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={

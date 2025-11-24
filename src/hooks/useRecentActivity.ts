@@ -41,13 +41,22 @@ export interface ActivityItem {
 }
 
 export function useRecentActivity() {
+    // Debug: Print aggregated gifts and paymentRequests before mapping
+    // Debug: Print raw fetched data for each activity type
     const { profile } = useCoinbase();
     const walletAddress = profile?.walletAddress;
     const email = profile?.email;
+    // Debug log for walletAddress
+    if (typeof walletAddress !== 'undefined') {
+        console.log('[useRecentActivity] walletAddress:', walletAddress);
+    } else {
+        console.log('[useRecentActivity] walletAddress is undefined');
+    }
+    console.log('[useRecentActivity] profile:', profile ? 'exists' : 'null');
 
     // 1. Transfers (App-level)
     const { data: transfers = [] } = useQuery({
-        queryKey: ['transfers', walletAddress],
+        queryKey: ['transfers', 'wallet', walletAddress],
         queryFn: () => walletAddress ? listTransfers(walletAddress) : [],
         enabled: !!walletAddress,
     });
@@ -61,22 +70,22 @@ export function useRecentActivity() {
 
     // 3. Gifts
     const { data: gifts = [] } = useQuery({
-        queryKey: ['gifts', walletAddress, email],
-        queryFn: () => getCryptoGifts(walletAddress || email),
-        enabled: !!(walletAddress || email),
+        queryKey: ['gifts', email],
+        queryFn: () => email ? getCryptoGifts(email) : [],
+        enabled: !!email,
     });
 
     // 4. Payment Requests
     const { data: paymentRequests = [] } = useQuery({
         queryKey: ['paymentRequests', email],
-        queryFn: () => getPaymentRequests(email),
+        queryFn: () => email ? getPaymentRequests(email) : [],
         enabled: !!email,
     });
 
     // 5. Invoices
     const { data: invoices = [] } = useQuery({
         queryKey: ['invoices', email],
-        queryFn: () => getInvoices(email),
+        queryFn: () => email ? getInvoices(email) : [],
         enabled: !!email,
     });
 
@@ -89,157 +98,232 @@ export function useRecentActivity() {
 
     const activities = useMemo(() => {
         const allActivities: ActivityItem[] = [];
+        console.log('[useRecentActivity] Processing transfers:', transfers?.length);
+        console.log('[useRecentActivity] Processing tips:', tips?.length);
+        console.log('[useRecentActivity] Processing gifts:', gifts?.length);
+        console.log('[useRecentActivity] Processing paymentRequests:', paymentRequests?.length);
+        console.log('[useRecentActivity] Processing invoices:', invoices?.length);
+        console.log('[useRecentActivity] Processing blockchainTxs:', blockchainTxs?.length);
 
-        // Process Transfers
-        transfers.forEach(t => {
-            allActivities.push({
-                id: t.id,
-                type: 'transfer-sent', // Currently listTransfers only returns sent transfers
-                title: 'Sent Transfer',
-                subtitle: `To: ${t.intent.recipientEmail}`,
-                amount: -t.intent.amountUsdc,
-                currency: 'USDC',
-                timestamp: new Date(t.createdAt).getTime(),
-                status: t.status === 'sent' ? 'completed' : 'pending',
-                txHash: t.txHash,
-                metadata: {
-                    to: t.intent.recipientEmail,
-                    message: t.intent.memo,
-                }
-            });
-        });
+        // const isAAWallet = !!(walletAddress && walletAddress.toLowerCase().startsWith('0x'));
+        // if (!isAAWallet) {
+        //     const noWalletItem: ActivityItem = {
+        //         id: 'no-aa-wallet',
+        //         type: 'transfer-sent',
+        //         title: 'No smart account detected',
+        //         subtitle: 'Please sign in with your AA wallet.',
+        //         amount: 0,
+        //         currency: 'USDC',
+        //         timestamp: Date.now(),
+        //         status: 'failed',
+        //     };
+        //     return [noWalletItem];
+        // }
 
-        // Process Tips
-        tips.forEach(t => {
-            const isSender = t.fromWallet === walletAddress;
-            allActivities.push({
-                id: t.id,
-                type: isSender ? 'tip-sent' : 'tip-received',
-                title: isSender ? 'Sent Tip' : 'Received Tip',
-                subtitle: isSender ? (t.toEmail ? `To: ${t.toEmail}` : 'Sent via link') : `From: ${t.fromEmail}`,
-                amount: isSender ? -t.amount : t.amount,
-                currency: t.currency,
-                timestamp: new Date(t.createdAt).getTime(),
-                status: t.status === 'completed' ? 'completed' : 'pending',
-                txHash: t.txHash,
-                metadata: {
-                    from: t.fromEmail,
-                    to: t.toEmail,
-                    message: t.message,
-                }
-            });
-        });
-
-        // Process Gifts
-        gifts.forEach(g => {
-            const isSender = g.fromWallet === walletAddress || g.fromEmail === email;
-            // Only show if completed or if I'm the sender (pending sent gift)
-            if (g.status === 'claimed' || isSender) {
+        // Tips: include sent and received (completed)
+        (tips || []).forEach((t: Tip) => {
+            const status = t.status || 'completed';
+            if (status !== 'completed') return;
+            const isSender = (t.fromWallet && t.fromWallet.toLowerCase() === walletAddress?.toLowerCase()) || t.fromEmail === email;
+            const isRecipient = (t.toWallet && t.toWallet.toLowerCase() === walletAddress?.toLowerCase()) || t.toEmail === email;
+            if (isSender) {
                 allActivities.push({
-                    id: g.id,
-                    type: isSender ? 'gift-sent' : 'gift-received',
-                    title: isSender ? 'Sent Gift' : 'Received Gift',
-                    subtitle: isSender ? (g.toEmail ? `To: ${g.toEmail}` : 'Created gift link') : `From: ${g.fromName || g.fromEmail}`,
-                    amount: isSender ? -g.amount : g.amount,
+                    id: t.id,
+                    type: 'tip-sent',
+                    title: 'Sent Tip',
+                    subtitle: t.toEmail ? `To: ${t.toEmail}` : 'Sent via link',
+                    amount: -Number(t.amount),
+                    currency: t.currency || 'USDC',
+                    timestamp: new Date(t.createdAt).getTime(),
+                    status: 'completed',
+                    txHash: t.txHash,
+                    metadata: { from: t.fromEmail, to: t.toEmail, message: t.message },
+                });
+            } else if (isRecipient) {
+                allActivities.push({
+                    id: t.id + '-received',
+                    type: 'tip-received',
+                    title: 'Received Tip',
+                    subtitle: t.fromEmail ? `From: ${t.fromEmail}` : 'Received via link',
+                    amount: Number(t.amount),
+                    currency: t.currency || 'USDC',
+                    timestamp: new Date(t.createdAt).getTime(),
+                    status: 'completed',
+                    txHash: t.txHash,
+                    metadata: { from: t.fromEmail, to: t.toEmail, message: t.message },
+                });
+            }
+        });
+
+        // Gifts: include sent and received
+        (gifts || []).forEach((g: CryptoGift) => {
+            const status = g.status;
+            if (status !== 'claimed') return;
+            const isSender = g.fromEmail === email || g.fromWallet === walletAddress;
+            const isRecipient = g.toEmail === email || g.toWallet === walletAddress;
+            const amount = Number(g.amount);
+            if (isSender) {
+                allActivities.push({
+                    id: `${g.id}-sent`,
+                    type: 'gift-sent',
+                    title: `Gift sent`,
+                    subtitle: g.toName ? `To: ${g.toName}` : `To: ${g.toEmail}`,
+                    amount: -amount,
                     currency: g.currency,
                     timestamp: new Date(g.createdAt).getTime(),
-                    status: g.status === 'claimed' ? 'completed' : 'pending',
+                    status: 'completed',
                     txHash: g.txHash,
-                    metadata: {
-                        from: g.fromName,
-                        to: g.toName,
-                        message: g.message,
-                        theme: g.theme,
-                    }
+                    metadata: { from: g.fromName, to: g.toName, message: g.message, theme: g.theme },
+                });
+            }
+            if (isRecipient) {
+                allActivities.push({
+                    id: `${g.id}-received`,
+                    type: 'gift-received',
+                    title: `Gift received`,
+                    subtitle: g.fromName ? `From: ${g.fromName}` : `From: ${g.fromEmail}`,
+                    amount: amount,
+                    currency: g.currency,
+                    timestamp: new Date(g.claimedAt || g.createdAt).getTime(),
+                    status: 'completed',
+                    txHash: g.txHash,
+                    metadata: { from: g.fromName, to: g.toName, message: g.message, theme: g.theme },
                 });
             }
         });
 
-        // Process Payment Requests
-        paymentRequests.forEach(pr => {
-            const isPayer = pr.paidBy === walletAddress;
-            const isCreator = pr.fromEmail === email;
-
-            // Show if I'm the creator (received/pending/expired) or if I paid it (paid)
-            if (isCreator || (pr.status === 'paid' && isPayer)) {
-                let type: ActivityType = 'payment-request-received'; // Default to received (request created)
-                if (pr.status === 'paid' && isPayer) type = 'payment-request-paid';
-
-                let status: 'pending' | 'completed' | 'failed' | 'expired' | 'cancelled' = 'pending';
-                if (pr.status === 'paid') status = 'completed';
-                if (pr.status === 'expired') status = 'expired';
-                if (pr.status === 'cancelled') status = 'cancelled';
-
+        // Payment Requests: include paid/received
+        (paymentRequests || []).forEach((pr: PaymentRequest) => {
+            const status = pr.status;
+            if (status !== 'paid') return;
+            const amount = Number(pr.amount);
+            const isSender = pr.fromEmail === email; // I created the request
+            const isRecipient = pr.toEmail === email; // Request sent to me, and I paid it
+            if (isSender) {
+                // Someone paid my request
                 allActivities.push({
-                    id: pr.id,
-                    type,
-                    title: isCreator ? 'Payment Request' : 'Paid Request',
-                    subtitle: isCreator ? `From: ${pr.toEmail}` : `To: ${pr.fromEmail}`,
-                    amount: isCreator ? pr.amount : -pr.amount,
+                    id: `${pr.id}-received`,
+                    type: 'payment-request-received',
+                    title: `Payment received`,
+                    subtitle: `From: ${pr.paidBy}`,
+                    amount: amount,
                     currency: pr.currency,
                     timestamp: new Date(pr.paidAt || pr.createdAt).getTime(),
-                    status,
-                    txHash: pr.txHash,
-                    metadata: {
-                        description: pr.description,
-                        from: pr.fromEmail,
-                        to: pr.toEmail,
-                    }
-                });
-            }
-        });
-
-        // Process Invoices
-        invoices.forEach(inv => {
-            const isSender = inv.fromEmail === email;
-            // Only show if paid or if I sent it
-            if (inv.status === 'paid' || isSender) {
-                allActivities.push({
-                    id: inv.id,
-                    type: isSender ? 'invoice-sent' : 'invoice-received',
-                    title: `Invoice ${inv.invoiceNumber}`,
-                    subtitle: isSender ? `To: ${inv.toName}` : `From: ${inv.fromName}`,
-                    amount: isSender ? inv.total : -inv.total,
-                    currency: inv.currency,
-                    timestamp: new Date(inv.createdAt).getTime(),
-                    status: inv.status === 'paid' ? 'completed' : 'pending',
-                    txHash: inv.txHash,
-                    metadata: {
-                        from: inv.fromName || inv.fromEmail,
-                        to: inv.toName || inv.toEmail,
-                        invoiceNumber: inv.invoiceNumber,
-                    }
-                });
-            }
-        });
-
-        // Process Blockchain Txs (Fallback for untracked items)
-        // We need to deduplicate. If a txHash exists in other activities, skip it here.
-        const knownHashes = new Set(allActivities.map(a => a.txHash).filter(Boolean));
-
-        blockchainTxs.forEach(tx => {
-            if (!knownHashes.has(tx.hash)) {
-                const isSent = tx.type === 'sent';
-                allActivities.push({
-                    id: tx.hash,
-                    type: isSent ? 'blockchain-sent' : 'blockchain-received',
-                    title: isSent ? 'Sent USDC' : 'Received USDC',
-                    subtitle: isSent ? `To: ${tx.to.slice(0, 6)}...${tx.to.slice(-4)}` : `From: ${tx.from.slice(0, 6)}...${tx.from.slice(-4)}`,
-                    amount: isSent ? -tx.value : tx.value,
-                    currency: 'USDC',
-                    timestamp: tx.timestamp,
                     status: 'completed',
-                    txHash: tx.hash,
-                    metadata: {
-                        from: tx.from,
-                        to: tx.to,
-                    }
+                    txHash: pr.txHash,
+                    metadata: { description: pr.description, from: pr.paidBy, to: pr.fromEmail },
+                });
+            }
+            if (isRecipient) {
+                // I paid the request
+                allActivities.push({
+                    id: `${pr.id}-paid`,
+                    type: 'payment-request-paid',
+                    title: `Payment sent`,
+                    subtitle: `To: ${pr.fromEmail}`,
+                    amount: -amount,
+                    currency: pr.currency,
+                    timestamp: new Date(pr.paidAt || pr.createdAt).getTime(),
+                    status: 'completed',
+                    txHash: pr.txHash,
+                    metadata: { description: pr.description, from: pr.toEmail, to: pr.fromEmail },
                 });
             }
         });
 
-        return allActivities.sort((a, b) => b.timestamp - a.timestamp);
-    }, [transfers, tips, gifts, paymentRequests, invoices, blockchainTxs, walletAddress, email]);
+        // Transfers: include sent and received
+        (transfers || []).forEach((t: TransferRecord) => {
+            const status = t.status;
+            if (status !== 'sent') return;
+            const sender = t.senderWallet;
+            const recipient = t.recipientWallet || t.intent.recipientEmail;
+            const isSent = sender && sender.toLowerCase() === walletAddress?.toLowerCase();
+            const isReceived = (recipient && typeof recipient === 'string' && recipient.toLowerCase() === walletAddress?.toLowerCase()) || (t.intent.recipientEmail === email);
+            const amount = Number(t.intent.amountUsdc);
+            if (isSent) {
+                let type: ActivityType = 'transfer-sent';
+                let title = 'Sent Transfer';
+                const memo = t.intent.memo || '';
+                if (memo.toLowerCase().includes('international')) { type = 'blockchain-sent'; title = 'Sent Internationally'; }
+                else if (memo.toLowerCase().includes('add funds')) { type = 'blockchain-received'; title = 'Add Funds'; }
+                else if (memo.toLowerCase().includes('withdraw')) { type = 'blockchain-sent'; title = 'Withdraw'; }
+                else if (memo.toLowerCase().includes('email')) { type = 'transfer-sent'; title = 'Sent via Email'; }
+                allActivities.push({ id: t.id, type, title, subtitle: `To: ${t.intent.recipientEmail || recipient}`, amount: -amount, currency: 'USDC', timestamp: new Date(t.createdAt).getTime(), status: 'completed', txHash: t.txHash, metadata: { to: t.intent.recipientEmail, from: t.intent.senderEmail, message: t.intent.memo } });
+            }
+            if (isReceived) {
+                allActivities.push({ id: `${t.id}-received`, type: 'transfer-received', title: 'Received Transfer', subtitle: `From: ${t.intent.senderEmail || sender}`, amount: amount, currency: 'USDC', timestamp: new Date(t.createdAt).getTime(), status: 'completed', txHash: t.txHash, metadata: { from: t.intent.senderEmail, to: t.intent.recipientEmail, message: t.intent.memo } });
+            }
+        });
+
+        // Invoices: include sent/received (paid)
+        (invoices || []).forEach((inv: Invoice) => {
+            const status = inv.status;
+            if (status !== 'paid') return;
+            const amount = Number(inv.total);
+            const isSender = inv.fromEmail === email; // I sent the invoice
+            const isRecipient = inv.toEmail === email; // Invoice sent to me, and I paid it
+            if (isSender) {
+                // Someone paid my invoice
+                allActivities.push({
+                    id: `${inv.id}-received`,
+                    type: 'invoice-received',
+                    title: `Invoice paid`,
+                    subtitle: `From: ${inv.toEmail}`,
+                    amount: amount,
+                    currency: inv.currency,
+                    timestamp: new Date(inv.paidAt || inv.createdAt).getTime(),
+                    status: 'completed',
+                    txHash: inv.txHash,
+                    metadata: { from: inv.fromEmail, to: inv.toEmail, description: inv.notes },
+                });
+            }
+            if (isRecipient) {
+                // I paid the invoice
+                allActivities.push({
+                    id: `${inv.id}-paid`,
+                    type: 'invoice-sent',
+                    title: `Invoice paid`,
+                    subtitle: `To: ${inv.fromEmail}`,
+                    amount: -amount,
+                    currency: inv.currency,
+                    timestamp: new Date(inv.paidAt || inv.createdAt).getTime(),
+                    status: 'completed',
+                    txHash: inv.txHash,
+                    metadata: { from: inv.toEmail, to: inv.fromEmail, description: inv.notes },
+                });
+            }
+        });
+
+        // Blockchain transactions: include sent and received
+        const knownHashes = new Set(allActivities.map(a => a.txHash).filter(Boolean));
+        (blockchainTxs || []).forEach((tx: any) => {
+            if (!tx || !tx.hash) return;
+            if (knownHashes.has(tx.hash)) return;
+            const from = tx.from && tx.from.toLowerCase();
+            const to = tx.to && tx.to.toLowerCase();
+            if (from === walletAddress?.toLowerCase()) {
+                allActivities.push({ id: tx.hash, type: 'blockchain-sent', title: 'Sent USDC', subtitle: `To: ${tx.to}`, amount: -Number(tx.value), currency: 'USDC', timestamp: tx.timestamp || Date.now(), status: 'completed', txHash: tx.hash, metadata: { from: tx.from, to: tx.to } });
+            } else if (to === walletAddress?.toLowerCase()) {
+                allActivities.push({ id: tx.hash + '-in', type: 'blockchain-received', title: 'Received USDC', subtitle: `From: ${tx.from}`, amount: Number(tx.value), currency: 'USDC', timestamp: tx.timestamp || Date.now(), status: 'completed', txHash: tx.hash, metadata: { from: tx.from, to: tx.to } });
+            }
+        });
+
+        const sorted = allActivities.sort((a, b) => b.timestamp - a.timestamp);
+        if (sorted.length === 0) {
+            const noActivityItem: ActivityItem = {
+                id: 'no-activity',
+                type: 'transfer-sent',
+                title: 'No recent activity found',
+                subtitle: 'No transactions for your AA wallet yet.',
+                amount: 0,
+                currency: 'USDC',
+                timestamp: Date.now(),
+                status: 'completed',
+            };
+            return [noActivityItem];
+        }
+        return sorted;
+    }, [transfers, tips, gifts, paymentRequests, invoices, blockchainTxs, walletAddress, email, profile]);
 
     return { activities };
 }

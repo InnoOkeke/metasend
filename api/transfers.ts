@@ -36,6 +36,7 @@ const TransferRecordSchema = z.object({
 
 type ListFilter = {
   senderWallet?: string;
+  recipientWallet?: string;
   senderUserId?: string;
   limit?: number;
 };
@@ -50,6 +51,9 @@ router.get('/', async (req: Request, res: Response) => {
     if (typeof req.query.senderWallet === "string") {
       filter.senderWallet = req.query.senderWallet;
     }
+    if (typeof req.query.recipientWallet === "string") {
+      filter.recipientWallet = req.query.recipientWallet;
+    }
     if (typeof req.query.senderUserId === "string") {
       filter.senderUserId = req.query.senderUserId;
     }
@@ -59,8 +63,8 @@ router.get('/', async (req: Request, res: Response) => {
         filter.limit = parsedLimit;
       }
     }
-    if (!filter.senderWallet && !filter.senderUserId) {
-      return badRequest(res, "Provide senderWallet or senderUserId");
+    if (!filter.senderWallet && !filter.recipientWallet && !filter.senderUserId) {
+      return badRequest(res, "Provide senderWallet, recipientWallet, or senderUserId");
     }
     const transfers = await db.listTransferRecords(filter);
     return res.status(200).json({ success: true, transfers });

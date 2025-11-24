@@ -80,7 +80,8 @@
       "coinbaseAppId": "162ddeb1-c67e-43fa-b38b-78a916eb7cde",
       "coinbaseOAuthClientId": "YOUR-COINBASE-OAUTH-CLIENT-ID",
       "coinbaseRedirectScheme": "metasend",
-      "appUrl": "https://metasend.vercel.app"
+      "appUrl": "https://metasend.vercel.app",
+      "metasendApiBaseUrl": "http://10.0.2.2:3000"
     }
   }
 }

@@ -430,34 +430,27 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   };
 
   const renderActivity = ({ item }: ListRenderItemInfo<ActivityItem>) => {
-    const isReceived = item.amount > 0;
-
-    let icon = <Text style={{ fontSize: 20 }}>💸</Text>;
+    // Icon logic
+    let icon = null;
     switch (item.type) {
-      case 'gift-sent':
-      case 'gift-received':
-        icon = <Text style={{ fontSize: 20 }}>🎁</Text>;
-        break;
-      case 'payment-request-paid':
-      case 'payment-request-received':
-        icon = <Text style={{ fontSize: 20 }}>📄</Text>;
-        break;
-      case 'tip-sent':
-      case 'tip-received':
-        icon = <Text style={{ fontSize: 20 }}>💸</Text>;
-        break;
-      default:
-        icon = <Text style={{ fontSize: 20 }}>{isReceived ? '⬇️' : '↗️'}</Text>;
+      case 'gift-sent': icon = <Text style={{ fontSize: 20 }}>🎁</Text>; break;
+      case 'tip-sent': icon = <Text style={{ fontSize: 20 }}>💸</Text>; break;
+      case 'payment-request-paid': icon = <Text style={{ fontSize: 20 }}>📄</Text>; break;
+      case 'payment-request-received': icon = <Text style={{ fontSize: 20 }}>📄</Text>; break;
+      case 'blockchain-received': icon = <Text style={{ fontSize: 20 }}>💰</Text>; break;
+      case 'blockchain-sent': icon = <Text style={{ fontSize: 20 }}>↗️</Text>; break;
+      case 'transfer-sent': icon = <Text style={{ fontSize: 20 }}>📧</Text>; break;
+      default: icon = <Text style={{ fontSize: 20 }}>💸</Text>;
     }
 
     return (
       <TouchableOpacity onPress={() => handleTransactionPress(item)}>
         <TransactionCard
+          icon={icon}
           title={item.title}
           subtitle={formatRelativeDate(new Date(item.timestamp).toISOString())}
           amount={`${item.amount > 0 ? '+' : ''}${item.amount.toFixed(2)} ${item.currency}`}
-          icon={icon}
-          statusText={item.status === 'pending' ? 'Pending' : undefined}
+          transactionHash={item.txHash}
         />
       </TouchableOpacity>
     );
@@ -655,7 +648,20 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
               <FlatList
                 data={hasBaseWallet ? activities.slice(0, 5) : []}
                 keyExtractor={(item) => item.id}
-                renderItem={renderActivity}
+                renderItem={(info) => {
+                  const item = info.item;
+                  if (item.id === 'no-aa-wallet' || item.id === 'no-activity') {
+                    return (
+                      <View style={{ alignItems: 'center', marginTop: 32 }}>
+                        <Text style={{ fontSize: 16, color: '#888' }}>{item.title}</Text>
+                        {item.subtitle && (
+                          <Text style={{ fontSize: 14, color: '#aaa', marginTop: 8 }}>{item.subtitle}</Text>
+                        )}
+                      </View>
+                    );
+                  }
+                  return renderActivity(info);
+                }}
                 style={styles.list}
                 contentContainerStyle={styles.listContentHome}
                 ListEmptyComponent={
@@ -816,95 +822,77 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
               </View>
             </View>
           )}
-          <Modal
-            visible={isMoreFeaturesModalVisible}
-            transparent
-            animationType="slide"
-            onRequestClose={() => setIsMoreFeaturesModalVisible(false)}
-          >
-            <Pressable style={styles.modalOverlay} onPress={() => setIsMoreFeaturesModalVisible(false)}>
-              <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
-                <View style={styles.modalHandle} />
-                <Text style={styles.modalTitle}>More Features</Text>
+          {isMoreFeaturesModalVisible && (
+            <View style={styles.inlineSendOverlay} pointerEvents="box-none">
+              <Pressable style={styles.inlineSendBackdrop} onPress={() => setIsMoreFeaturesModalVisible(false)} />
+              <View style={styles.inlineSendSheet} accessibilityLabel="More features">
+                <Text style={styles.inlineSendTitle}>More Features</Text>
+                <Text style={styles.inlineSendSubtitle}>
+                  Explore additional features and tools.
+                </Text>
 
                 <TouchableOpacity
-                  style={styles.modalOption}
+                  style={styles.inlineSendButton}
                   onPress={() => {
                     setIsMoreFeaturesModalVisible(false);
                     navigation.navigate('Tipping');
                   }}
                 >
-                  <View style={styles.modalOptionIcon}>
-                    <Text style={styles.modalOptionEmoji}>💸</Text>
+                  <View style={styles.inlineSendButtonCopy}>
+                    <Text style={styles.inlineSendButtonTitle}>Micro-Tipping</Text>
+                    <Text style={styles.inlineSendButtonSubtitle}>Send tips to creators</Text>
                   </View>
-                  <View style={styles.modalOptionText}>
-                    <Text style={styles.modalOptionTitle}>Micro-Tipping</Text>
-                    <Text style={styles.modalOptionSubtitle}>Send tips to creators</Text>
-                  </View>
+                  <Text style={styles.inlineSendBadge}>💸</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={styles.modalOption}
+                  style={styles.inlineSendButton}
                   onPress={() => {
                     setIsMoreFeaturesModalVisible(false);
                     navigation.navigate('PaymentRequests');
                   }}
                 >
-                  <View style={styles.modalOptionIcon}>
-                    <Text style={styles.modalOptionEmoji}>📧</Text>
+                  <View style={styles.inlineSendButtonCopy}>
+                    <Text style={styles.inlineSendButtonTitle}>Payment Requests</Text>
+                    <Text style={styles.inlineSendButtonSubtitle}>Request payments via email</Text>
                   </View>
-                  <View style={styles.modalOptionText}>
-                    <Text style={styles.modalOptionTitle}>Payment Requests</Text>
-                    <Text style={styles.modalOptionSubtitle}>Request payments via email</Text>
-                  </View>
+                  <Text style={styles.inlineSendBadge}>📧</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={styles.modalOption}
+                  style={styles.inlineSendButton}
                   onPress={() => {
                     setIsMoreFeaturesModalVisible(false);
                     navigation.navigate('Invoices');
                   }}
                 >
-                  <View style={styles.modalOptionIcon}>
-                    <Text style={styles.modalOptionEmoji}>📄</Text>
+                  <View style={styles.inlineSendButtonCopy}>
+                    <Text style={styles.inlineSendButtonTitle}>Invoices</Text>
+                    <Text style={styles.inlineSendButtonSubtitle}>Create professional invoices</Text>
                   </View>
-                  <View style={styles.modalOptionText}>
-                    <Text style={styles.modalOptionTitle}>Invoices</Text>
-                    <Text style={styles.modalOptionSubtitle}>Create professional invoices</Text>
-                  </View>
+                  <Text style={styles.inlineSendBadge}>📄</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={styles.modalOption}
+                  style={styles.inlineSendButton}
                   onPress={() => {
                     setIsMoreFeaturesModalVisible(false);
                     navigation.navigate('Gifts');
                   }}
                 >
-                  <View style={styles.modalOptionIcon}>
-                    <Text style={styles.modalOptionEmoji}>🎁</Text>
+                  <View style={styles.inlineSendButtonCopy}>
+                    <Text style={styles.inlineSendButtonTitle}>Crypto Gifts</Text>
+                    <Text style={styles.inlineSendButtonSubtitle}>Send themed crypto gifts</Text>
                   </View>
-                  <View style={styles.modalOptionText}>
-                    <Text style={styles.modalOptionTitle}>Crypto Gifts</Text>
-                    <Text style={styles.modalOptionSubtitle}>Send themed crypto gifts</Text>
-                  </View>
+                  <Text style={styles.inlineSendBadge}>🎁</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={[styles.modalOption, { borderBottomWidth: 0 }]}
-                  onPress={() => setIsMoreFeaturesModalVisible(false)}
-                >
-                  <View style={styles.modalOptionIcon}>
-                    <Text style={styles.modalOptionEmoji}>✖️</Text>
-                  </View>
-                  <View style={styles.modalOptionText}>
-                    <Text style={styles.modalOptionTitle}>Cancel</Text>
-                  </View>
+                <TouchableOpacity style={styles.inlineSendDismiss} onPress={() => setIsMoreFeaturesModalVisible(false)}>
+                  <Text style={styles.inlineSendDismissText}>Dismiss</Text>
                 </TouchableOpacity>
-              </Pressable>
-            </Pressable>
-          </Modal>
+              </View>
+            </View>
+          )}
 
           {/* Location Modal */}
           <Modal

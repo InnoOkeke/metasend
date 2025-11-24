@@ -45,11 +45,32 @@ export const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = (
 
     const isReceived = transaction.amount > 0;
     const formattedAmount = Math.abs(transaction.amount).toFixed(2);
-
-    // Calculate local amount if currency is different from transaction currency (assuming transaction is in USDC/USD)
-    // If transaction.currency is not USDC, we might need more complex logic, but for now assuming USDC base.
     const localAmount = (Math.abs(transaction.amount) * fxRate).toFixed(2);
     const showLocal = userCurrency !== transaction.currency;
+
+    // Determine To/From logic for details
+    let detailsLabel = '';
+    let detailsValue = '';
+    if (isReceived) {
+        // Received: show From sender
+        detailsLabel = 'From';
+        detailsValue = transaction.metadata?.from || 'Unknown Sender';
+    } else {
+        // Sent: show To recipient
+        detailsLabel = 'To';
+        detailsValue = transaction.metadata?.to || 'Unknown Recipient';
+    }
+
+    // For tip, pay, gift, follow same routine
+    if (['tip-sent', 'tip-received', 'gift-sent', 'gift-received', 'payment-request-paid', 'payment-request-received'].includes(transaction.type)) {
+        if (isReceived) {
+            detailsLabel = 'From';
+            detailsValue = transaction.metadata?.from || 'Unknown Sender';
+        } else {
+            detailsLabel = 'To';
+            detailsValue = transaction.metadata?.to || 'Unknown Recipient';
+        }
+    }
 
     const getIcon = () => {
         switch (transaction.type) {
@@ -69,7 +90,7 @@ export const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = (
 
     const getTitle = () => {
         if (isReceived) {
-            return "You've been rewarded"; // Or "You received funds" depending on context
+            return "You've been rewarded";
         }
         return "Transaction Sent";
     };
@@ -79,9 +100,6 @@ export const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = (
             Linking.openURL(`https://sepolia.basescan.org/tx/${transaction.txHash}`);
         }
     };
-
-    const senderName = senderProfile?.displayName || transaction.metadata?.from || 'Unknown Sender';
-    const senderAvatar = senderProfile?.avatar;
 
     return (
         <Modal
@@ -99,32 +117,40 @@ export const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = (
                     </View>
 
                     <View style={styles.amountContainer}>
-                        <Text style={[styles.amount, isReceived ? styles.amountReceived : styles.amountSent]}>
-                            {formattedAmount} {transaction.currency}
-                        </Text>
-                        {showLocal && (
-                            <Text style={styles.subAmount}>≈ {userCurrency} {localAmount}</Text>
+                        {showLocal ? (
+                            <>
+                                <Text style={[styles.amount, isReceived ? styles.amountReceived : styles.amountSent]}>
+                                    {userCurrency} {localAmount}
+                                </Text>
+                                <Text style={styles.subAmount}>
+                                    {formattedAmount} {transaction.currency}
+                                </Text>
+                            </>
+                        ) : (
+                            <Text style={[styles.amount, isReceived ? styles.amountReceived : styles.amountSent]}>
+                                {formattedAmount} {transaction.currency}
+                            </Text>
                         )}
                         <Text style={styles.date}>{new Date(transaction.timestamp).toLocaleString()}</Text>
                     </View>
 
                     <View style={styles.detailsContainer}>
-                        <Text style={styles.sectionLabel}>From</Text>
+                        <Text style={styles.sectionLabel}>{detailsLabel}</Text>
                         <View style={styles.userRow}>
                             <View style={styles.avatarPlaceholder}>
                                 <Text style={styles.avatarText}>
-                                    {senderName.charAt(0).toUpperCase()}
+                                    {detailsValue.charAt(0).toUpperCase()}
                                 </Text>
                             </View>
                             <Text style={styles.userName}>
-                                {senderName.startsWith('0x') ? formatShortAddress(senderName) : senderName}
+                                {detailsValue.startsWith('0x') ? formatShortAddress(detailsValue) : detailsValue}
                             </Text>
                         </View>
                     </View>
 
                     {transaction.txHash && (
                         <TouchableOpacity style={styles.receiptButton} onPress={handleOpenExplorer}>
-                            <Text style={styles.receiptButtonText}>Blockchain receipt</Text>
+                            <Text style={styles.receiptButtonText}>Txn Hash</Text>
                         </TouchableOpacity>
                     )}
                 </Pressable>

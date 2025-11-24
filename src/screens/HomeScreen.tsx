@@ -450,7 +450,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
           title={item.title}
           subtitle={formatRelativeDate(new Date(item.timestamp).toISOString())}
           amount={`${item.amount > 0 ? '+' : ''}${item.amount.toFixed(2)} ${item.currency}`}
-          transactionHash={item.txHash}
         />
       </TouchableOpacity>
     );

@@ -90,9 +90,9 @@ export const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = (
 
     const getTitle = () => {
         if (isReceived) {
-            return "You've been rewarded";
+            return "You've got Funds";
         }
-        return "Transaction Sent";
+        return "Transfer Complete 🚀";
     };
 
     const handleOpenExplorer = () => {

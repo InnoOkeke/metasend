@@ -73,11 +73,11 @@ export async function createTipLink(
 export async function getTipLinks(creatorWallet?: string): Promise<TipLink[]> {
   const data = await AsyncStorage.getItem(TIP_LINKS_KEY);
   const links: TipLink[] = data ? JSON.parse(data) : [];
-  
+
   if (creatorWallet) {
     return links.filter(link => link.creatorWallet === creatorWallet);
   }
-  
+
   return links;
 }
 
@@ -166,16 +166,26 @@ export async function sendTipViaLink(
 /**
  * Get all tips for a user
  */
-export async function getTips(walletAddress?: string): Promise<Tip[]> {
+export async function getTips(walletAddress?: string, email?: string): Promise<Tip[]> {
   const data = await AsyncStorage.getItem(TIPS_KEY);
   const tips: Tip[] = data ? JSON.parse(data) : [];
-  
-  if (walletAddress) {
-    return tips.filter(
-      tip => tip.fromWallet === walletAddress || tip.toWallet === walletAddress
-    );
+
+  if (walletAddress || email) {
+    return tips.filter(tip => {
+      const walletMatch = walletAddress && (
+        (tip.fromWallet && tip.fromWallet.toLowerCase() === walletAddress.toLowerCase()) ||
+        (tip.toWallet && tip.toWallet.toLowerCase() === walletAddress.toLowerCase())
+      );
+
+      const emailMatch = email && (
+        tip.fromEmail === email ||
+        tip.toEmail === email
+      );
+
+      return walletMatch || emailMatch;
+    });
   }
-  
+
   return tips;
 }
 
@@ -197,10 +207,10 @@ async function updateTipLink(tipLink: TipLink): Promise<void> {
 export async function toggleTipLinkStatus(id: string): Promise<TipLink | null> {
   const tipLink = await getTipLink(id);
   if (!tipLink) return null;
-  
+
   tipLink.isActive = !tipLink.isActive;
   await updateTipLink(tipLink);
-  
+
   return tipLink;
 }
 

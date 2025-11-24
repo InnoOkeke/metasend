@@ -98,12 +98,13 @@ export function useRecentActivity() {
 
     const activities = useMemo(() => {
         const allActivities: ActivityItem[] = [];
-        console.log('[useRecentActivity] Processing transfers:', transfers?.length);
-        console.log('[useRecentActivity] Processing tips:', tips?.length);
-        console.log('[useRecentActivity] Processing gifts:', gifts?.length);
-        console.log('[useRecentActivity] Processing paymentRequests:', paymentRequests?.length);
-        console.log('[useRecentActivity] Processing invoices:', invoices?.length);
-        console.log('[useRecentActivity] Processing blockchainTxs:', blockchainTxs?.length);
+        console.log('[useRecentActivity] Wallet:', walletAddress, 'Email:', email);
+        console.log('[useRecentActivity] Raw Tips:', JSON.stringify(tips, null, 2));
+        console.log('[useRecentActivity] Raw Gifts:', JSON.stringify(gifts, null, 2));
+        console.log('[useRecentActivity] Raw PaymentRequests:', JSON.stringify(paymentRequests, null, 2));
+        console.log('[useRecentActivity] Raw Invoices:', JSON.stringify(invoices, null, 2));
+        console.log('[useRecentActivity] Raw Transfers:', transfers?.length);
+        console.log('[useRecentActivity] Raw BlockchainTxs:', blockchainTxs?.length);
 
         // const isAAWallet = !!(walletAddress && walletAddress.toLowerCase().startsWith('0x'));
         // if (!isAAWallet) {
@@ -123,7 +124,8 @@ export function useRecentActivity() {
         // Tips: include sent and received (completed)
         (tips || []).forEach((t: Tip) => {
             const status = t.status || 'completed';
-            if (status !== 'completed') return;
+            // Include all statuses, map to ActivityItem status
+            const activityStatus = status === 'pending' ? 'pending' : status === 'expired' ? 'expired' : 'completed';
             const isSender = (t.fromWallet && t.fromWallet.toLowerCase() === walletAddress?.toLowerCase()) || t.fromEmail === email;
             const isRecipient = (t.toWallet && t.toWallet.toLowerCase() === walletAddress?.toLowerCase()) || t.toEmail === email;
             if (isSender) {
@@ -135,7 +137,7 @@ export function useRecentActivity() {
                     amount: -Number(t.amount),
                     currency: t.currency || 'USDC',
                     timestamp: new Date(t.createdAt).getTime(),
-                    status: 'completed',
+                    status: activityStatus,
                     txHash: t.txHash,
                     metadata: { from: t.fromEmail, to: t.toEmail, message: t.message },
                 });
@@ -143,12 +145,12 @@ export function useRecentActivity() {
                 allActivities.push({
                     id: t.id + '-received',
                     type: 'tip-received',
-                    title: 'Received Tip',
+                    title: 'You earned a tip 🎉',
                     subtitle: t.fromEmail ? `From: ${t.fromEmail}` : 'Received via link',
                     amount: Number(t.amount),
                     currency: t.currency || 'USDC',
                     timestamp: new Date(t.createdAt).getTime(),
-                    status: 'completed',
+                    status: activityStatus,
                     txHash: t.txHash,
                     metadata: { from: t.fromEmail, to: t.toEmail, message: t.message },
                 });
@@ -158,7 +160,8 @@ export function useRecentActivity() {
         // Gifts: include sent and received
         (gifts || []).forEach((g: CryptoGift) => {
             const status = g.status;
-            if (status !== 'claimed') return;
+            // Include pending (unclaimed) gifts
+            const activityStatus = status === 'claimed' ? 'completed' : 'pending';
             const isSender = g.fromEmail === email || g.fromWallet === walletAddress;
             const isRecipient = g.toEmail === email || g.toWallet === walletAddress;
             const amount = Number(g.amount);
@@ -171,7 +174,7 @@ export function useRecentActivity() {
                     amount: -amount,
                     currency: g.currency,
                     timestamp: new Date(g.createdAt).getTime(),
-                    status: 'completed',
+                    status: activityStatus,
                     txHash: g.txHash,
                     metadata: { from: g.fromName, to: g.toName, message: g.message, theme: g.theme },
                 });
@@ -185,7 +188,7 @@ export function useRecentActivity() {
                     amount: amount,
                     currency: g.currency,
                     timestamp: new Date(g.claimedAt || g.createdAt).getTime(),
-                    status: 'completed',
+                    status: activityStatus,
                     txHash: g.txHash,
                     metadata: { from: g.fromName, to: g.toName, message: g.message, theme: g.theme },
                 });
@@ -195,7 +198,8 @@ export function useRecentActivity() {
         // Payment Requests: include paid/received
         (paymentRequests || []).forEach((pr: PaymentRequest) => {
             const status = pr.status;
-            if (status !== 'paid') return;
+            // Include pending (unpaid) requests
+            const activityStatus = status === 'paid' ? 'completed' : 'pending';
             const amount = Number(pr.amount);
             const isSender = pr.fromEmail === email; // I created the request
             const isRecipient = pr.toEmail === email; // Request sent to me, and I paid it
@@ -209,7 +213,7 @@ export function useRecentActivity() {
                     amount: amount,
                     currency: pr.currency,
                     timestamp: new Date(pr.paidAt || pr.createdAt).getTime(),
-                    status: 'completed',
+                    status: activityStatus,
                     txHash: pr.txHash,
                     metadata: { description: pr.description, from: pr.paidBy, to: pr.fromEmail },
                 });
@@ -224,7 +228,7 @@ export function useRecentActivity() {
                     amount: -amount,
                     currency: pr.currency,
                     timestamp: new Date(pr.paidAt || pr.createdAt).getTime(),
-                    status: 'completed',
+                    status: activityStatus,
                     txHash: pr.txHash,
                     metadata: { description: pr.description, from: pr.toEmail, to: pr.fromEmail },
                 });
@@ -242,7 +246,7 @@ export function useRecentActivity() {
             const amount = Number(t.intent.amountUsdc);
             if (isSent) {
                 let type: ActivityType = 'transfer-sent';
-                let title = 'Sent Transfer';
+                let title = 'Payment Sent 🎉';
                 const memo = t.intent.memo || '';
                 if (memo.toLowerCase().includes('international')) { type = 'blockchain-sent'; title = 'Sent Internationally'; }
                 else if (memo.toLowerCase().includes('add funds')) { type = 'blockchain-received'; title = 'Add Funds'; }
@@ -251,7 +255,7 @@ export function useRecentActivity() {
                 allActivities.push({ id: t.id, type, title, subtitle: `To: ${t.intent.recipientEmail || recipient}`, amount: -amount, currency: 'USDC', timestamp: new Date(t.createdAt).getTime(), status: 'completed', txHash: t.txHash, metadata: { to: t.intent.recipientEmail, from: t.intent.senderEmail, message: t.intent.memo } });
             }
             if (isReceived) {
-                allActivities.push({ id: `${t.id}-received`, type: 'transfer-received', title: 'Received Transfer', subtitle: `From: ${t.intent.senderEmail || sender}`, amount: amount, currency: 'USDC', timestamp: new Date(t.createdAt).getTime(), status: 'completed', txHash: t.txHash, metadata: { from: t.intent.senderEmail, to: t.intent.recipientEmail, message: t.intent.memo } });
+                allActivities.push({ id: `${t.id}-received`, type: 'transfer-received', title: 'You Got Paid 💸', subtitle: `From: ${t.intent.senderEmail || sender}`, amount: amount, currency: 'USDC', timestamp: new Date(t.createdAt).getTime(), status: 'completed', txHash: t.txHash, metadata: { from: t.intent.senderEmail, to: t.intent.recipientEmail, message: t.intent.memo } });
             }
         });
 
@@ -307,6 +311,33 @@ export function useRecentActivity() {
                 allActivities.push({ id: tx.hash + '-in', type: 'blockchain-received', title: 'Received USDC', subtitle: `From: ${tx.from}`, amount: Number(tx.value), currency: 'USDC', timestamp: tx.timestamp || Date.now(), status: 'completed', txHash: tx.hash, metadata: { from: tx.from, to: tx.to } });
             }
         });
+
+        // Mock Add Funds and Withdraw (for demo purposes)
+        const mockAddFunds: ActivityItem = {
+            id: 'mock-add-funds',
+            type: 'blockchain-received',
+            title: 'Add Funds',
+            subtitle: 'From Bank Account',
+            amount: 50,
+            currency: 'USDC',
+            timestamp: Date.now() - 1000 * 60 * 60 * 24 * 2, // 2 days ago
+            status: 'completed',
+            metadata: { method: 'ACH' }
+        };
+
+        const mockWithdraw: ActivityItem = {
+            id: 'mock-withdraw',
+            type: 'blockchain-sent',
+            title: 'Withdraw',
+            subtitle: 'To Bank Account',
+            amount: -20,
+            currency: 'USDC',
+            timestamp: Date.now() - 1000 * 60 * 60 * 24 * 5, // 5 days ago
+            status: 'completed',
+            metadata: { method: 'ACH' }
+        };
+
+        allActivities.push(mockAddFunds, mockWithdraw);
 
         const sorted = allActivities.sort((a, b) => b.timestamp - a.timestamp);
         if (sorted.length === 0) {

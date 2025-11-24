@@ -16,6 +16,10 @@ import { formatRelativeDate, formatShortAddress } from "../utils/format";
 import { cancelPendingTransfer, getSentPendingTransfers, type PendingTransferSummary } from "../services/api";
 import { useRecentActivity, ActivityItem } from "../hooks/useRecentActivity";
 import { TransferRecord } from "../services/transfers";
+import {
+  checkLocationPermission,
+  getUserLocation,
+} from "../services/location";
 
 type Props = NativeStackScreenProps<RootStackParamList, "TransactionHistory">;
 
@@ -36,7 +40,97 @@ export const TransactionHistoryScreen: React.FC<Props> = ({ navigation }) => {
   const [shouldPollPending, setShouldPollPending] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<ActivityItem | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [userCurrency, setUserCurrency] = useState<string>('USD');
+  const [fxRate, setFxRate] = useState<number>(1);
   const queryClient = useQueryClient();
+
+  // Helper function to get currency from country code
+  const getCurrencyFromCountryCode = (countryCode: string): { currency: string; symbol: string } => {
+    const currencyByCountry: Record<string, { currency: string; symbol: string }> = {
+      'US': { currency: 'USD', symbol: '$' },
+      'GB': { currency: 'GBP', symbol: '£' },
+      'NG': { currency: 'NGN', symbol: '₦' },
+      'KE': { currency: 'KES', symbol: 'KSh' },
+      'ZA': { currency: 'ZAR', symbol: 'R' },
+      'GH': { currency: 'GHS', symbol: 'GH₵' },
+      'JP': { currency: 'JPY', symbol: '¥' },
+      'CN': { currency: 'CNY', symbol: '¥' },
+      'IN': { currency: 'INR', symbol: '₹' },
+      'BR': { currency: 'BRL', symbol: 'R$' },
+      'CA': { currency: 'CAD', symbol: 'CA$' },
+      'AU': { currency: 'AUD', symbol: 'A$' },
+      'NZ': { currency: 'NZD', symbol: 'NZ$' },
+      'MX': { currency: 'MXN', symbol: 'MX$' },
+      'AR': { currency: 'ARS', symbol: 'AR$' },
+      'DE': { currency: 'EUR', symbol: '€' },
+      'FR': { currency: 'EUR', symbol: '€' },
+      'IT': { currency: 'EUR', symbol: '€' },
+      'ES': { currency: 'EUR', symbol: '€' },
+      'NL': { currency: 'EUR', symbol: '€' },
+      'BE': { currency: 'EUR', symbol: '€' },
+      'AT': { currency: 'EUR', symbol: '€' },
+      'PT': { currency: 'EUR', symbol: '€' },
+      'IE': { currency: 'EUR', symbol: '€' },
+      'FI': { currency: 'EUR', symbol: '€' },
+      'GR': { currency: 'EUR', symbol: '€' },
+    };
+    return currencyByCountry[countryCode] ?? { currency: 'USD', symbol: '$' };
+  };
+
+  const fetchFxRate = async (currency: string) => {
+    if (currency === 'USD') {
+      setFxRate(1);
+      return;
+    }
+
+    try {
+      const response = await fetch(`https://api.exchangerate-api.com/v4/latest/USD`);
+      const data = await response.json();
+
+      if (data.rates && data.rates[currency]) {
+        setFxRate(data.rates[currency]);
+      } else {
+        setFxRate(1);
+      }
+    } catch (error) {
+      console.error('Error fetching FX rate:', error);
+      setFxRate(1);
+    }
+  };
+
+  // Auto-detect location on mount
+  useEffect(() => {
+    const initializeLocation = async () => {
+      const permission = await checkLocationPermission();
+
+      if (permission === 'granted') {
+        const location = await getUserLocation();
+        if (location) {
+          const currencyData = getCurrencyFromCountryCode(location.countryCode);
+          setUserCurrency(currencyData.currency);
+        }
+      } else {
+        // Fallback to IP location if permission not granted (similar to HomeScreen)
+        try {
+          const res = await fetch('https://ipinfo.io/json');
+          const location = await res.json();
+          if (location && location.country) {
+            const currencyData = getCurrencyFromCountryCode(location.country);
+            setUserCurrency(currencyData.currency);
+          }
+        } catch (e) {
+          console.log('Failed to get IP location', e);
+        }
+      }
+    };
+
+    initializeLocation();
+  }, []);
+
+  // Fetch FX rate when currency changes
+  useEffect(() => {
+    fetchFxRate(userCurrency);
+  }, [userCurrency]);
 
   const { activities } = useRecentActivity();
 
@@ -211,7 +305,6 @@ export const TransactionHistoryScreen: React.FC<Props> = ({ navigation }) => {
           title={item.title}
           subtitle={formatRelativeDate(new Date(item.timestamp).toISOString())}
           amount={`${item.amount > 0 ? '+' : ''}${item.amount.toFixed(2)} ${item.currency}`}
-          transactionHash={item.txHash}
         />
       </TouchableOpacity>
     );
@@ -271,6 +364,8 @@ export const TransactionHistoryScreen: React.FC<Props> = ({ navigation }) => {
           visible={modalVisible}
           onClose={() => setModalVisible(false)}
           transaction={selectedTransaction}
+          userCurrency={userCurrency}
+          fxRate={fxRate}
         />
       )}
     </View>

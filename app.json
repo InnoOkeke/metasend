@@ -26,7 +26,8 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/AppIcons/playstore.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#ffffff",
+        "monochromeImage": "./assets/AppIcons/playstore.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,

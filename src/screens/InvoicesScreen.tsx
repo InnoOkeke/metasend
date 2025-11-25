@@ -122,7 +122,7 @@ export const InvoicesScreen: React.FC<Props> = ({ route, navigation }) => {
   };
 
   const handleCreateInvoice = () => {
-    Alert.alert("Coming Soon", "Invoice creation is under development");
+    navigation.navigate("CreateInvoice");
   };
 
   if (!profile) {

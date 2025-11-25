@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState, useEffect } from "react";
-import { ActivityIndicator, StyleSheet, Text, View, FlatList, ListRenderItemInfo, RefreshControl, Modal, Pressable, TouchableOpacity, ScrollView, Clipboard, Alert, BackHandler, SafeAreaView } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, View, FlatList, ListRenderItemInfo, RefreshControl, Modal, Pressable, TouchableOpacity, ScrollView, Clipboard, Alert, BackHandler, SafeAreaView, GestureResponderEvent, Image } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useFocusEffect } from "@react-navigation/native";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -15,9 +15,11 @@ import { RootStackParamList } from "../navigation/RootNavigator";
 import { spacing, typography } from "../utils/theme";
 import type { ColorPalette } from "../utils/theme";
 import { formatRelativeDate, formatShortAddress } from "../utils/format";
+import { SettingsScreen } from "./SettingsScreen";
 import { useToast } from "../utils/toast";
 import {
   buildRampUrl,
+  buildRampUrlWithSession,
   getAvailableProviders,
   getCoinbasePaymentMethods,
   fetchCoinbasePaymentMethods,
@@ -75,6 +77,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   const { activities } = useRecentActivity();
   const [selectedTransaction, setSelectedTransaction] = useState<ActivityItem | null>(null);
   const [isTransactionModalVisible, setIsTransactionModalVisible] = useState(false);
+  const [rampUrl, setRampUrl] = useState<string | null>(null);
 
   // Helper function to get currency from country code
   const fetchFxRate = async (currency: string) => {
@@ -408,17 +411,37 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     }
   };
 
-  const openRamp = (provider: RampProvider, paymentMethod: PaymentMethod | null) => {
+  const openRamp = async (provider: RampProvider, paymentMethod: PaymentMethod | null) => {
     if (!profile?.walletAddress) {
       console.error("No wallet address available");
       return;
     }
-    setShowWebView(true);
+
+    try {
+      setWebViewLoading(true);
+
+      // Build ramp URL with sessionToken support for Coinbase
+      const url = await buildRampUrlWithSession({
+        provider,
+        type: selectedRampType!,
+        walletAddress: profile.walletAddress,
+        assetSymbol: "USDC",
+        destinationNetwork: "base",
+        paymentMethod: paymentMethod ?? undefined,
+      });
+
+      setRampUrl(url);
+      setShowWebView(true);
+    } catch (error) {
+      console.error("Failed to build ramp URL:", error);
+      showToast("Failed to open payment provider", "error");
+    }
   };
 
   const closeRamp = () => {
     setShowWebView(false);
     setWebViewLoading(true);
+    setRampUrl(null);
     setSelectedRampType(null);
     setSelectedProvider(null);
     setSelectedPaymentMethod(null);
@@ -503,6 +526,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     }
   };
 
+  // Disconnect function for SettingsScreen
+  function disconnect(): void {
+    logout();
+  }
+
   return (
     <>
       <SafeAreaView style={styles.safeArea}>
@@ -512,19 +540,39 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             <>
               <View style={styles.heroCard}>
                 <View style={styles.profileRow}>
-                  <View style={styles.profileDetails}>
-                    <Text style={styles.greeting}>Welcome back,</Text>
-                    <Text style={styles.username}>{profile?.displayName ?? profile?.email}</Text>
-                  </View>
-                  <TouchableOpacity style={styles.locationIcon} onPress={handleLocationIconPress}>
-                    <Text style={styles.locationEmoji}>📍</Text>
-                    {userCountryCode && (
-                      <Text style={styles.locationText}>{userCountryCode}</Text>
+                  <TouchableOpacity
+                    style={styles.profileImageContainer}
+                    onPress={() => setActiveTab("settings")}
+                    activeOpacity={0.7}
+                  >
+                    {profile?.photoUrl ? (
+                      <Image
+                        source={{ uri: profile.photoUrl }}
+                        style={styles.profileImage}
+                      />
+                    ) : (
+                      <View style={styles.profileImageFallback}>
+                        <Text style={styles.profileImageInitials}>
+                          {(profile?.displayName || profile?.email || 'U').charAt(0).toUpperCase()}
+                        </Text>
+                      </View>
                     )}
                   </TouchableOpacity>
+                  <View style={styles.profileDetails}>
+                    <Text style={styles.greeting}>Welcome back,</Text>
+                    <Text style={styles.username}>{(profile?.username ?? profile?.displayName ?? profile?.email ?? 'user').split('@')[0]}</Text>
+                  </View>
+                  <View style={styles.profileActions}>
+                    <TouchableOpacity style={styles.locationIcon} onPress={handleLocationIconPress}>
+                      <Text style={styles.locationEmoji}>📍</Text>
+                      {userCountryCode && (
+                        <Text style={styles.locationText}>{userCountryCode}</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
                 </View>
                 <View style={styles.balanceSection}>
-                  <Text style={styles.balanceLabel}>Total Balance</Text>
+                  <Text style={styles.balanceLabel}>Account Balance</Text>
                   <Text style={styles.balanceAmount}>
                     {loadingBalance ? "..." : usdcBalance !== undefined ? `${currencySymbol}${(usdcBalance * fxRate).toFixed(2)}` : `${currencySymbol}0.00`}
                   </Text>
@@ -748,12 +796,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                   style={styles.inlineSendButton}
                   onPress={() => {
                     setIsDepositModalVisible(false);
-                    setSelectedRampType("onramp");
+                    navigation.navigate("AddFunds");
                   }}
                 >
                   <View style={styles.inlineSendButtonCopy}>
                     <Text style={styles.inlineSendButtonTitle}>Wallet or Exchange</Text>
-                    <Text style={styles.inlineSendButtonSubtitle}>Transfer from another wallet</Text>
+                    <Text style={styles.inlineSendButtonSubtitle}>Buy crypto with cards, bank, or mobile money</Text>
                   </View>
                   <Text style={styles.inlineSendBadge}>👛</Text>
                 </TouchableOpacity>
@@ -843,21 +891,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                   </View>
                   <Text style={styles.inlineSendBadge}>💸</Text>
                 </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.inlineSendButton}
-                  onPress={() => {
-                    setIsMoreFeaturesModalVisible(false);
-                    navigation.navigate('PaymentRequests');
-                  }}
-                >
-                  <View style={styles.inlineSendButtonCopy}>
-                    <Text style={styles.inlineSendButtonTitle}>Payment Requests</Text>
-                    <Text style={styles.inlineSendButtonSubtitle}>Request payments via email</Text>
-                  </View>
-                  <Text style={styles.inlineSendBadge}>📧</Text>
-                </TouchableOpacity>
-
                 <TouchableOpacity
                   style={styles.inlineSendButton}
                   onPress={() => {
@@ -1133,18 +1166,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                 </View>
               )}
 
-              {profile?.walletAddress && selectedProvider && selectedRampType && (
+              {rampUrl && (
                 <WebView
-                  source={{
-                    uri: buildRampUrl({
-                      provider: selectedProvider,
-                      type: selectedRampType,
-                      walletAddress: profile.walletAddress,
-                      assetSymbol: "USDC",
-                      destinationNetwork: "base",
-                      paymentMethod: selectedPaymentMethod ?? undefined,
-                    })
-                  }}
+                  source={{ uri: rampUrl }}
                   style={styles.webView}
                   onLoadStart={() => setWebViewLoading(true)}
                   onLoadEnd={() => setWebViewLoading(false)}
@@ -1204,68 +1228,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
 
           {/* Settings Screen */}
           {activeTab === "settings" && (
-            <View style={styles.settingsContainer}>
-              <ScrollView style={styles.settingsScroll} showsVerticalScrollIndicator={false}>
-                <View style={styles.settingsSection}>
-                  <Text style={styles.settingsSectionTitle}>Appearance</Text>
-
-                  <View style={styles.settingRow}>
-                    <View style={styles.settingInfo}>
-                      <Text style={styles.settingTitle}>Theme</Text>
-                      <Text style={styles.settingDescription}>Choose your preferred theme</Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.themeSelector}>
-                    <TouchableOpacity
-                      style={[styles.themeOption, scheme === "light" && styles.themeOptionActive]}
-                      onPress={() => setScheme("light")}
-                    >
-                      <Text style={styles.themeOptionIcon}>☀️</Text>
-                      <Text style={[styles.themeOptionText, scheme === "light" && styles.themeOptionTextActive]}>Light</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[styles.themeOption, scheme === "dark" && styles.themeOptionActive]}
-                      onPress={() => setScheme("dark")}
-                    >
-                      <Text style={styles.themeOptionIcon}>🌙</Text>
-                      <Text style={[styles.themeOptionText, scheme === "dark" && styles.themeOptionTextActive]}>Dark</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-
-                {/* Location section removed as requested */}
-
-                <View style={styles.settingsSection}>
-                  <Text style={styles.settingsSectionTitle}>Account</Text>
-
-                  <View style={styles.settingRow}>
-                    <View style={styles.settingInfo}>
-                      <Text style={styles.settingTitle}>Email</Text>
-                      <Text style={styles.settingDescription}>{profile?.email ?? "Not set"}</Text>
-                    </View>
-                  </View>
-
-                  <TouchableOpacity style={styles.settingRow} onPress={copyWalletAddress} activeOpacity={0.7}>
-                    <View style={styles.settingInfo}>
-                      <Text style={styles.settingTitle}>Wallet Address</Text>
-                      <Text style={styles.settingDescription}>{profile?.walletAddress ? formatShortAddress(profile.walletAddress) : "Not connected"}</Text>
-                    </View>
-                    {profile?.walletAddress && <Text style={styles.settingCopy}>📋</Text>}
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.settingsSection}>
-                  <TouchableOpacity style={styles.settingRow} onPress={disconnect}>
-                    <View style={styles.settingInfo}>
-                      <Text style={[styles.settingTitle, { color: "#EF4444" }]}>Sign Out</Text>
-                    </View>
-                    <Text style={styles.settingArrow}>→</Text>
-                  </TouchableOpacity>
-                </View>
-              </ScrollView>
-            </View>
+            <SettingsScreen
+              profile={profile}
+              scheme={scheme}
+              setScheme={setScheme}
+              copyWalletAddress={copyWalletAddress}
+              disconnect={disconnect}
+            />
           )}
 
           {/* Bottom Tab Navigation */}
@@ -1431,6 +1400,36 @@ const createStyles = (colors: ColorPalette) =>
     },
     profileDetails: {
       flex: 1,
+    },
+    profileActions: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.sm,
+    },
+    profileImageContainer: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      overflow: "hidden",
+      borderWidth: 2,
+      borderColor: "#FFFFFF",
+      backgroundColor: "#FFFFFF20",
+    },
+    profileImage: {
+      width: "100%",
+      height: "100%",
+    },
+    profileImageFallback: {
+      width: "100%",
+      height: "100%",
+      backgroundColor: "#FFFFFF30",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    profileImageInitials: {
+      color: "#FFFFFF",
+      fontSize: 18,
+      fontWeight: "700",
     },
     greeting: {
       ...typography.body,

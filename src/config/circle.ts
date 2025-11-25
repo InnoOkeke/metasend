@@ -6,8 +6,8 @@ export const CIRCLE_CONFIG = {
     apiKey: CIRCLE_API_KEY,
     environment: 'testnet' as const,
     // Base Sepolia for testing
-    chain: 'ETH-SEPOLIA' as const,
+    chain: 'BASE-SEPOLIA' as const,
 };
 
 // Circle API endpoints
-export const CIRCLE_API_URL = 'https://api.circle.com/v1/w3s';
+export const CIRCLE_API_URL = 'https://api-sandbox.circle.com/v1/w3s';

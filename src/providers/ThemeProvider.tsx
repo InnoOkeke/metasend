@@ -3,7 +3,7 @@ import { ColorSchemeName, useColorScheme } from "react-native";
 
 import { ColorPalette, darkColors, lightColors } from "../utils/theme";
 
-type ThemeScheme = "light" | "dark";
+export type ThemeScheme = "light" | "dark";
 
 type ThemeContextValue = {
   scheme: ThemeScheme;

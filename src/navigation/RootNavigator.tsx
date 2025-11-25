@@ -15,12 +15,14 @@ import { TransactionHistoryScreen } from "../screens/TransactionHistoryScreen";
 import { TippingScreen } from "../screens/TippingScreen";
 import { PaymentRequestsScreen } from "../screens/PaymentRequestsScreen";
 import { InvoicesScreen } from "../screens/InvoicesScreen";
+import { CreateInvoiceScreen } from "../screens/CreateInvoiceScreen";
 import { GiftsScreen } from "../screens/GiftsScreen";
 import { ClaimScreen } from "../screens/Claim/ClaimScreen";
 import { InternationalTransferScreen } from "../screens/InternationalTransfer/InternationalTransferScreen";
 import { DepositScreen } from "../screens/DepositScreen";
 import { ProvidersScreen } from "../screens/ProvidersScreen";
 import { WithdrawScreen } from "../screens/WithdrawScreen";
+import { AddFundsScreen } from "../screens/AddFundsScreen";
 import { RETURNING_USER_KEY, BIOMETRIC_AUTH_KEY } from "../constants/auth";
 
 export type RootStackParamList = {
@@ -31,13 +33,14 @@ export type RootStackParamList = {
   OffRamp: undefined;
   TransactionHistory: undefined;
   Tipping: { tipJarId?: string } | undefined;
-  PaymentRequests: { requestId?: string } | undefined;
   Invoices: { invoiceId?: string } | undefined;
+  CreateInvoice: undefined;
   Gifts: { giftId?: string } | undefined;
   Claim: { transferId: string };
   Deposit: undefined;
   Providers: { amount: string; method: string };
   Withdraw: undefined;
+  AddFunds: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -217,10 +220,12 @@ export const RootNavigator: React.FC = () => {
           <Stack.Screen name="OffRamp" component={OffRampScreen} options={{ title: "On / Off Ramp" }} />
           <Stack.Screen name="TransactionHistory" component={TransactionHistoryScreen} options={{ headerShown: false }} />
           <Stack.Screen name="Tipping" component={TippingScreen} options={{ title: "Tipping" }} />
-          <Stack.Screen name="PaymentRequests" component={PaymentRequestsScreen} options={{ title: "Payment Requests" }} />
+          {/* <Stack.Screen name="PaymentRequests" component={PaymentRequestsScreen} options={{ title: "Payment Requests" }} /> */}
           <Stack.Screen name="Invoices" component={InvoicesScreen} options={{ title: "Invoices" }} />
+          <Stack.Screen name="CreateInvoice" component={CreateInvoiceScreen} options={{ title: "Create Invoice" }} />
           <Stack.Screen name="Gifts" component={GiftsScreen} options={{ title: "Gifts" }} />
           <Stack.Screen name="Deposit" component={DepositScreen} options={{ title: "Deposit Funds" }} />
+          <Stack.Screen name="AddFunds" component={AddFundsScreen} options={{ title: "Add Funds" }} />
           <Stack.Screen name="Providers" component={ProvidersScreen} options={{ title: "Select Provider", presentation: 'modal' }} />
           <Stack.Screen name="Withdraw" component={WithdrawScreen} options={{ title: "Withdraw Funds" }} />
         </Stack.Navigator>

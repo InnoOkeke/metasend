@@ -125,7 +125,7 @@ export function useRecentActivity() {
                 allActivities.push({
                     id: t.id,
                     type: 'tip-sent',
-                    title: 'You Just Tipped 🙌',
+                    title: 'You Just Tipped',
                     subtitle: t.toEmail ? `To: ${t.toEmail}` : 'Sent via link',
                     amount: -Number(t.amount),
                     currency: t.currency || 'USDC',
@@ -138,7 +138,7 @@ export function useRecentActivity() {
                 allActivities.push({
                     id: t.id + '-received',
                     type: 'tip-received',
-                    title: 'You earned a tip 🎉',
+                    title: 'You earned a tip',
                     subtitle: t.fromEmail ? `From: ${t.fromEmail}` : 'Received via link',
                     amount: Number(t.amount),
                     currency: t.currency || 'USDC',
@@ -162,7 +162,7 @@ export function useRecentActivity() {
                 allActivities.push({
                     id: `${g.id}-sent`,
                     type: 'gift-sent',
-                    title: `Gift sent 🎁`,
+                    title: `Gift sent`,
                     subtitle: g.toName ? `To: ${g.toName}` : `To: ${g.toEmail}`,
                     amount: -amount,
                     currency: g.currency,
@@ -176,7 +176,7 @@ export function useRecentActivity() {
                 allActivities.push({
                     id: `${g.id}-received`,
                     type: 'gift-received',
-                    title: `You Got a Gift ✨`,
+                    title: `You Got a Gift`,
                     subtitle: g.fromName ? `From: ${g.fromName}` : `From: ${g.fromEmail}`,
                     amount: amount,
                     currency: g.currency,
@@ -239,7 +239,7 @@ export function useRecentActivity() {
             const amount = Number(t.intent.amountUsdc);
             if (isSent) {
                 let type: ActivityType = 'transfer-sent';
-                let title = 'Payment Sent 🎉';
+                let title = 'Payment Sent';
                 const memo = t.intent.memo || '';
                 if (memo.toLowerCase().includes('international')) { type = 'blockchain-sent'; title = 'Sent Internationally'; }
                 else if (memo.toLowerCase().includes('add funds')) { type = 'blockchain-received'; title = 'Add Funds'; }
@@ -248,7 +248,7 @@ export function useRecentActivity() {
                 allActivities.push({ id: t.id, type, title, subtitle: `To: ${t.intent.recipientEmail || recipient}`, amount: -amount, currency: 'USDC', timestamp: new Date(t.createdAt).getTime(), status: 'completed', txHash: t.txHash, metadata: { to: t.intent.recipientEmail, from: t.intent.senderEmail, message: t.intent.memo } });
             }
             if (isReceived) {
-                allActivities.push({ id: `${t.id}-received`, type: 'transfer-received', title: 'You Got Paid 💸', subtitle: `From: ${t.intent.senderEmail || sender}`, amount: amount, currency: 'USDC', timestamp: new Date(t.createdAt).getTime(), status: 'completed', txHash: t.txHash, metadata: { from: t.intent.senderEmail, to: t.intent.recipientEmail, message: t.intent.memo } });
+                allActivities.push({ id: `${t.id}-received`, type: 'transfer-received', title: 'You Got Paid', subtitle: `From: ${t.intent.senderEmail || sender}`, amount: amount, currency: 'USDC', timestamp: new Date(t.createdAt).getTime(), status: 'completed', txHash: t.txHash, metadata: { from: t.intent.senderEmail, to: t.intent.recipientEmail, message: t.intent.memo } });
             }
         });
 

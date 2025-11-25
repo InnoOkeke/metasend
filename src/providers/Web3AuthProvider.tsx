@@ -2,12 +2,12 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from "
 import Web3Auth, { type IWeb3Auth } from "@web3auth/react-native-sdk";
 import { EthereumPrivateKeyProvider } from "@web3auth/ethereum-provider";
 // import { ChainNamespace } from "@web3auth/base";
-import * as WebBrowser from "expo-web-browser";
+import * as WebBrowser from "@toruslabs/react-native-web-browser";
 import * as SecureStore from "expo-secure-store";
-import { type Address, type Hex } from "viem";
+import { type Address, type Hex, type PrivateKeyAccount } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { registerUser, autoClaimPendingTransfers } from "../services/api";
-import { circleService } from "../services/circleService";
+import { smartWalletService } from "../services/smartWalletService";
 import Constants from "expo-constants";
 // Ensure randomBytes available on browserCrypto at module load time
 try {
@@ -43,6 +43,7 @@ export type UserProfile = {
     walletAddress: string;
     displayName?: string;
     photoUrl?: string;
+    username?: string;
 };
 
 export type AuthContextValue = {
@@ -60,10 +61,10 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 const chainConfig = {
     chainNamespace: "eip155" as any, // Use string literal
-    chainId: "0xaa36a7", // Sepolia
-    rpcTarget: "https://rpc.ankr.com/eth_sepolia",
-    displayName: "Ethereum Sepolia Testnet",
-    blockExplorerUrl: "https://sepolia.etherscan.io",
+    chainId: "0x14a34", // Base Sepolia (84532)
+    rpcTarget: process.env.BASE_SEPOLIA_RPC_URL || "https://sepolia.base.org",
+    displayName: "Base Sepolia",
+    blockExplorerUrl: "https://sepolia.basescan.org",
     ticker: "ETH",
     tickerName: "Ethereum",
 };
@@ -73,21 +74,21 @@ export const Web3AuthProvider: React.FC<React.PropsWithChildren> = ({ children }
     const [loading, setLoading] = useState(true); // Start as true until init completes
     const [error, setError] = useState<string | null>(null);
     const [profile, setProfile] = useState<UserProfile | null>(null);
-    const [circleWalletId, setCircleWalletId] = useState<string | null>(null);
     const [isConnected, setIsConnected] = useState(false);
+    const [smartAccountClient, setSmartAccountClient] = useState<any>(null);
 
     useEffect(() => {
         const init = async () => {
             try {
                 setLoading(true);
-                    console.log("🔄 Starting Web3Auth initialization...");
-                    // Debug: log browserCrypto availability
-                    try {
-                        // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-                        console.log("debug browserCrypto:", typeof (global as any).browserCrypto, "hasRandomBytes:", typeof (global as any).browserCrypto?.randomBytes);
-                    } catch (logErr) {
-                        console.warn("Could not read browserCrypto:", logErr);
-                    }
+                console.log("🔄 Starting Web3Auth initialization...");
+                // Debug: log browserCrypto availability
+                try {
+                    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+                    console.log("debug browserCrypto:", typeof (global as any).browserCrypto, "hasRandomBytes:", typeof (global as any).browserCrypto?.randomBytes);
+                } catch (logErr) {
+                    console.warn("Could not read browserCrypto:", logErr);
+                }
                 const clientId = getWeb3AuthClientId();
                 console.log("🆔 Client ID retrieved");
 
@@ -134,47 +135,41 @@ export const Web3AuthProvider: React.FC<React.PropsWithChildren> = ({ children }
 
             if (!w3a.provider) throw new Error("Web3Auth provider not available");
 
-            const privKey = await w3a.provider.request({ method: "eth_private_key" });
+            const privKey = await w3a.provider.request({ method: "eth_private_key" }) as string;
             if (!privKey) throw new Error("No private key found");
 
-            console.log("📦 Creating Circle Smart Wallet from Web3Auth...");
+            console.log("📦 Creating Coinbase Smart Wallet from Web3Auth...");
 
             // 1. Create EOA from Web3Auth private key
-            const owner = privateKeyToAccount(privKey as Hex);
-            console.log("🔑 Owner EOA:", owner.address);
+            // Web3Auth returns key without 0x prefix, but viem requires it
+            const formattedKey = privKey.startsWith('0x') ? privKey : `0x${privKey}`;
+            const eoaAccount = privateKeyToAccount(formattedKey as Hex);
+            console.log("🔑 EOA Owner:", eoaAccount.address);
 
-            // 2. Get user info from Web3Auth
+            // 2. Create Smart Account from EOA
+            const smartClient = await smartWalletService.createSmartAccount(eoaAccount);
+            const smartWalletAddress = smartClient.account.address;
+            console.log("✨ Smart Wallet Address:", smartWalletAddress);
+
+            // Store smart account client for transactions
+            setSmartAccountClient(smartClient);
+
+            // 3. Get user info from Web3Auth
             const userInfo = await w3a.userInfo();
             if (!userInfo) throw new Error("No user info found");
 
-            const email = userInfo.email || `user-${owner.address.slice(0, 6)}@metasend.io`;
-            const userId = userInfo.verifierId || owner.address;
+            const email = userInfo.email || `user-${eoaAccount.address.slice(0, 6)}@metasend.io`;
+            const userId = userInfo.verifierId || eoaAccount.address;
 
-            // 3. Create Circle Smart Wallet (SCA)
-            const idempotencyKey = `wallet-${userId}-${Date.now()}`;
-            console.log("📦 Creating Circle Smart Wallet...");
-
-            const circleWallet = await circleService.createWallet({
-                idempotencyKey,
-                accountType: 'SCA',
-                blockchains: ['ETH-SEPOLIA'],
-                metadata: [
-                    { key: 'userId', value: userId },
-                    { key: 'email', value: email },
-                ],
-            });
-
-            console.log("✨ Circle Wallet Created:", circleWallet.address);
-            console.log("📋 Wallet ID:", circleWallet.id);
-
-            setCircleWalletId(circleWallet.id);
+            // Extract username from name or email
+            const username = userInfo.name || email.split('@')[0];
 
             // 4. Register user with backend
             const directoryProfile = await registerUser({
                 userId,
                 email,
                 emailVerified: true,
-                walletAddress: circleWallet.address,
+                walletAddress: smartWalletAddress,
                 displayName: userInfo.name || email.split('@')[0],
                 photoUrl: userInfo.profileImage,
             });
@@ -182,21 +177,22 @@ export const Web3AuthProvider: React.FC<React.PropsWithChildren> = ({ children }
             const userProfile: UserProfile = {
                 userId: directoryProfile.userId,
                 email: directoryProfile.email,
-                walletAddress: directoryProfile.wallets.base || circleWallet.address,
+                walletAddress: directoryProfile.wallets.base || smartWalletAddress,
                 displayName: directoryProfile.profile.displayName,
                 photoUrl: directoryProfile.profile.avatar,
+                username: username,
             };
 
             setProfile(userProfile);
             setIsConnected(true);
 
-            console.log("✅ Circle Smart Wallet ready with Gas Station!");
+            console.log("✅ Smart Wallet ready with Coinbase Paymaster!");
 
             // Auto-claim pending transfers
             autoClaimPendingTransfers(userProfile.userId, userProfile.email).catch(console.warn);
 
         } catch (err) {
-            console.error("❌ Circle Wallet setup failed:", err);
+            console.error("❌ Wallet setup failed:", err);
             setError(err instanceof Error ? err.message : "Failed to setup wallet");
             setProfile(null);
             setIsConnected(false);
@@ -242,7 +238,6 @@ export const Web3AuthProvider: React.FC<React.PropsWithChildren> = ({ children }
             }
             setProfile(null);
             setIsConnected(false);
-            setCircleWalletId(null);
         } catch (err) {
             console.error("Logout error:", err);
         } finally {
@@ -250,46 +245,16 @@ export const Web3AuthProvider: React.FC<React.PropsWithChildren> = ({ children }
         }
     };
 
-    // Circle-based transaction sender with Gas Station
+    // Smart wallet transaction sender with Coinbase paymaster
     const sendUserOperation = async (calls: any[]): Promise<{ userOperationHash: string }> => {
-        if (!circleWalletId || !profile?.walletAddress) {
-            throw new Error("Wallet not initialized");
+        if (!smartAccountClient || !profile?.walletAddress) {
+            throw new Error("Smart wallet not initialized");
         }
 
         try {
-            console.log("🚀 Sending transaction with", calls.length, "call(s)");
+            console.log("🚀 Sending gasless transaction with Coinbase paymaster");
 
-            // For now, handle single call (extend for batching later)
-            if (calls.length !== 1) {
-                throw new Error("Batch transactions not yet implemented with Circle");
-            }
-
-            const call = calls[0];
-
-            // Sign and send transaction via Circle API
-            const transaction = await circleService.signTransaction({
-                walletId: circleWalletId,
-                blockchain: 'ETH-SEPOLIA',
-                transaction: {
-                    to: call.to as Address,
-                    data: call.data as Hex,
-                    value: call.value ? String(call.value) : '0',
-                },
-                // Use medium fee level for now
-                fee: {
-                    type: 'level',
-                    config: {
-                        feeLevel: 'MEDIUM',
-                    },
-                },
-            });
-
-            console.log("✅ Transaction submitted:", transaction.id);
-
-            // Wait for transaction confirmation
-            const txHash = await circleService.waitForTransaction(transaction.id);
-
-            console.log("✅ Transaction confirmed:", txHash);
+            const txHash = await smartWalletService.sendUserOperation(smartAccountClient, calls);
 
             return { userOperationHash: txHash };
         } catch (error) {
@@ -307,7 +272,7 @@ export const Web3AuthProvider: React.FC<React.PropsWithChildren> = ({ children }
         logout,
         error,
         sendUserOperation
-    }), [profile, isConnected, loading, error, circleWalletId]);
+    }), [profile, isConnected, loading, error]);
 
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
